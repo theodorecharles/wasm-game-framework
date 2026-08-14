@@ -241,6 +241,37 @@ assert.doesNotMatch(sharedCss, /max-width:[^}]+desktop-notice/s, 'a narrow deskt
   assert.equal(new TextDecoder().decode(legacyStream.node.contents), 'PACKowner-data');
   assert.equal(legacyStream.node.contentMode, 3);
 
+  const legacyPathCalls = [];
+  const legacyPathFs = {
+    createPath(parent, segment) { legacyPathCalls.push(['createPath', parent, segment]); },
+    stat(path) {
+      if (path === '/base/baseq3/pak0.pak') return { size: pak.size };
+      return { size: 0 };
+    },
+    open() { throw new Error('a matching persistent owner file must be reused'); },
+    chmod(path, mode) { legacyPathCalls.push(['chmod', path, mode]); }
+  };
+  const reused = await mountOwnerFiles(legacyPathFs, dataSet.entries, {
+    root: '/base/baseq3', mode: 'memfs', chunkBytes: 4
+  });
+  assert.equal(reused.mode, 'memfs');
+  assert.ok(legacyPathCalls.some(event => event[0] === 'createPath' && event[2] === 'baseq3'));
+  assert.ok(legacyPathCalls.some(event => event[0] === 'chmod' && event[1] === '/base/baseq3/pak0.pak'));
+
+  const replaced = [];
+  const mismatchFs = {
+    mkdirTree() {},
+    stat(path) { if (path.endsWith('pak0.pak')) return { size: 1 }; return { size: 0 }; },
+    chmod(path, mode) { replaced.push(['chmod', path, mode]); },
+    unlink(path) { replaced.push(['unlink', path]); },
+    open(path) { replaced.push(['open', path]); return { path, bytes: [] }; },
+    write(stream, bytes) { stream.bytes.push(...bytes); },
+    close() {}
+  };
+  await mountOwnerFiles(mismatchFs, dataSet.entries, { root: '/baseq3', chunkBytes: 4 });
+  assert.ok(replaced.some(event => event[0] === 'unlink' && event[1] === '/baseq3/pak0.pak'));
+  assert.ok(replaced.some(event => event[0] === 'open' && event[1] === '/baseq3/pak0.pak'));
+
   await Promise.all([ownerData.clear(), optionalData.clear(), trustedData.clear()]);
   console.log('shared web shell geometry, owner-data cache, validation, and mount tests passed');
 })().catch(error => {

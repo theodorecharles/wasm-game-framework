@@ -92,10 +92,13 @@ async function waitFor(url) {
     assert.equal(pwa.display, 'standalone');
     assert.equal(pwa.theme_color, '#123456');
     assert.deepEqual(pwa.icons, [{ src: '/fixture.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }]);
+    const faviconResponse = await fetch(`${base}/favicon.ico`, { redirect: 'manual' });
+    assert.equal(faviconResponse.status, 302);
+    assert.equal(faviconResponse.headers.get('location'), '/fixture.svg');
     const workerResponse = await fetch(`${base}/service-worker.js`);
     assert.equal(workerResponse.headers.get('service-worker-allowed'), '/');
     const worker = await workerResponse.text();
-    assert.match(worker, /wasm-game-shell-0\.7\.0/);
+    assert.match(worker, /wasm-game-shell-0\.7\.1/);
     assert.match(worker, /fetch\(event\.request\)/, 'shell cache must refresh from the network before using its fallback');
     assert.doesNotMatch(worker, /game-data/, 'the service worker must not duplicate owner game-data caching');
     const noVariant = await (await fetch(`${base}/game-data/status`)).json();

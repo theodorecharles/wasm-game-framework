@@ -697,7 +697,35 @@
       return typeof File === 'function' && file.name !== name ?
         new File([file], name, { type: file.type, lastModified: file.lastModified || 0 }) : file;
     });
-    if (typeof FS.mkdirTree === 'function') FS.mkdirTree(root);
+    function ensureDirectory(directory) {
+      if (typeof FS.mkdirTree === 'function') {
+        FS.mkdirTree(directory);
+        return;
+      }
+      if (typeof FS.createPath === 'function') {
+        let parent = '/';
+        for (const segment of String(directory).split('/').filter(Boolean)) {
+          try { FS.createPath(parent, segment, true, true); } catch (error) {
+            // Historical Emscripten releases may throw EEXIST instead of
+            // treating createPath as idempotent. Only suppress that case when
+            // the resulting path is actually present.
+            const current = `${parent === '/' ? '' : parent}/${segment}` || '/';
+            try { FS.stat(current); } catch (_) { throw error; }
+          }
+          parent = `${parent === '/' ? '' : parent}/${segment}` || '/';
+        }
+        return;
+      }
+      throw new Error(`This Emscripten filesystem cannot create ${directory}.`);
+    }
+    function existingSize(path) {
+      if (config.reuseExisting === false || typeof FS.stat !== 'function') return null;
+      try {
+        const stat = FS.stat(path);
+        return Number.isSafeInteger(stat.size) && stat.size >= 0 ? stat.size : null;
+      } catch (_) { return null; }
+    }
+    ensureDirectory(root);
 
     const workerFs = FS.filesystems && FS.filesystems.WORKERFS;
     if (!config.preservePaths && config.mode !== 'memfs' && workerFs && typeof FS.mount === 'function' && files.every(file => file instanceof Blob)) {
@@ -713,8 +741,19 @@
       const file = files[index];
       const name = mountPaths[index];
       const path = `${root}/${name}`;
-      if (config.preservePaths && name.includes('/') && typeof FS.mkdirTree === 'function') {
-        FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
+      if (config.preservePaths && name.includes('/')) {
+        ensureDirectory(path.slice(0, path.lastIndexOf('/')));
+      }
+      const size = existingSize(path);
+      if (size === file.size) {
+        copied += file.size;
+        try { FS.chmod(path, 0o444); } catch (_) {}
+        config.onProgress?.({ phase: 'mounting', mode: 'memfs', path, copied, total, reused: true });
+        continue;
+      }
+      if (size !== null && typeof FS.unlink === 'function') {
+        try { FS.chmod(path, 0o666); } catch (_) {}
+        FS.unlink(path);
       }
       const stream = FS.open(path, 'w');
       try {

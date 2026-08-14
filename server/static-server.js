@@ -230,6 +230,15 @@ const server = http.createServer(async (request, response) => {
       }));
       return request.method === 'HEAD' ? response.end() : response.end(body);
     }
+    if (url.pathname === '/favicon.ico' && (request.method === 'GET' || request.method === 'HEAD')) {
+      const icon = selectedGameConfig(url)?.icon;
+      if (icon && String(icon).startsWith('/') && icon !== '/favicon.ico') {
+        response.writeHead(302, commonHeaders({ Location: String(icon), 'Cache-Control': 'no-cache' }));
+        return response.end();
+      }
+      response.writeHead(204, commonHeaders({ 'Cache-Control': 'no-cache' }));
+      return response.end();
+    }
     if (!['GET', 'HEAD'].includes(request.method)) return json(response, 405, { error: 'Method not allowed.' });
     if (url.pathname === '/data' || url.pathname.startsWith('/data/') || url.pathname.startsWith('/local-data/')) {
       return json(response, 404, { error: 'Not found.' });

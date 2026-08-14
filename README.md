@@ -6,7 +6,7 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.7.0**
+Current release: **0.7.1**
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -22,7 +22,7 @@ compiled game WASM, or proprietary game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.7.0
+./scripts/build-base-image.sh wasm-game-framework:0.7.1
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -291,6 +291,10 @@ restores every valid file cache-first, requests only missing files, and asks
 for durable storage. `mountOwnerFiles()` then presents the results read-only
 through WORKERFS when available or copies them to MEMFS in bounded chunks.
 This is the standard owner-data path for every downstream engine.
+Legacy Emscripten filesystems are supported through their `createPath` API,
+and a same-size file already restored by the engine's persistent filesystem is
+reused instead of being destructively reopened. Set `reuseExisting: false`
+only when an adapter deliberately needs to replace an existing mount path.
 Build-engine games and other layouts with meaningful subdirectories can pass
 `preservePaths: true`; the framework then creates traversal-safe relative
 directories in MEMFS and retains policy `mountName` paths such as

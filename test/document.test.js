@@ -42,6 +42,7 @@ assert.match(html, /data-shell-game-icon/);
 assert.match(html, /data-shell-launch-fullscreen/);
 assert.match(html, /rel="manifest" href="\/app\.webmanifest"/);
 assert.match(html, /meta name="theme-color"/);
+assert.match(html, /rel="icon" href="data:,"/);
 assert.match(bootstrap, /navigator\.serviceWorker\.register\('\/service-worker\.js'/);
 assert.match(bootstrap, /app\.webmanifest\?variant=/);
 assert.match(bootstrap, /requestFullscreen\(\{ navigationUI: 'hide' \}\)/);

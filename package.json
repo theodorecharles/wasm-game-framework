@@ -1,6 +1,6 @@
 {
   "name": "@wasm-game-framework/browser",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": false,
   "description": "Reusable launcher, data, viewport, PWA, and lifecycle contract for browser-native games",
   "license": "MIT",
