@@ -8,6 +8,11 @@ application.
 
 Current release: **0.6.1**
 
+Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
+uses the framework's launcher, persistent game-data provisioning, browser
+cache, responsive canvas, input-capture lifecycle, graphics profiles,
+fullscreen launch, and idle dedicated-server wakeup.
+
 ## Quick start
 
 The framework is intentionally consumed from source while engine ports are
