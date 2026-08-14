@@ -26,10 +26,19 @@ assert.match(html, /data-shell-runtime/);
 assert.match(html, /data-shell-provisioning/);
 assert.match(html, /data-shell-data-ready/);
 assert.equal((html.match(/<canvas\b/g) || []).length, 1);
-assert.doesNotMatch(html, /legally owned|never uploaded|browser also caches/i,
+assert.doesNotMatch(html, /legally owned|legal game data|illegal|piracy|entitlement|never uploaded|browser also caches/i,
   'the normal framework document must not show stale storage-policy prose');
+assert.doesNotMatch(
+  bootstrap,
+  /state\.ready\s*\?\s*['"`]\s*(?:game data|files?|cache|container|directory|folder)/i,
+  'a ready container must not display file, storage, or cache instructions'
+);
 assert.match(bootstrap, /fetch\('\/wasm-game\.json'/);
 assert.match(bootstrap, /WasmGameAdapter\.start/);
+assert.match(bootstrap, /text\(elements\.description, config\.description\)/,
+  'launcher description must be controlled only by the game manifest');
+assert.doesNotMatch(bootstrap, /elements\.description[^\n]*(?:game data|files?|cache)/i,
+  'an omitted launcher description must not receive framework fallback copy');
 assert.match(bootstrap, /createContainerDataClient\(\{ variant/);
 assert.match(bootstrap, /displayMode: config\.displayMode/);
 assert.match(bootstrap, /adapter\?\.readEngineState/);

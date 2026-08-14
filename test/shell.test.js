@@ -16,6 +16,13 @@ const {
   validateOwnerFile,
   mountOwnerFiles
 } = require('../dist/wasm-game-framework.js');
+const frameworkPackage = require('../package.json');
+
+assert.equal(
+  require('../dist/wasm-game-framework.js').version,
+  frameworkPackage.version,
+  'the public browser API version must match the released package'
+);
 
 assert.equal(typeof createContainerDataClient, 'function');
 assert.equal(typeof detectCapabilities, 'function');
@@ -79,6 +86,16 @@ assert.match(
   'the shared shell must hide the host cursor while a native menu owns it'
 );
 const sharedCss = require('node:fs').readFileSync(require('node:path').join(__dirname, '../dist/wasm-game-framework.css'), 'utf8');
+const sharedJs = require('node:fs').readFileSync(require('node:path').join(__dirname, '../dist/wasm-game-framework.js'), 'utf8');
+assert.ok(
+  sharedJs.indexOf("canvas.addEventListener('pointerup', publishPointerButton)") <
+    sharedJs.indexOf("canvas.addEventListener('pointerup', captureAfterInteraction)"),
+  'native pointer-up delivery must be registered before deferred capture evaluation'
+);
+assert.match(sharedJs, /captureFrame = requestAnimationFrame\(\(\) => \{/,
+  'capture must be evaluated after the native engine receives a frame');
+assert.match(sharedJs, /!captured && typeof config\.readEngineState === 'function'/,
+  'pointer-lock loss must refresh native state before invoking capture-lost fallback');
 assert.match(sharedCss, /\(hover: none\) and \(pointer: coarse\)/, 'desktop notice must require a mobile-like primary pointer');
 assert.doesNotMatch(sharedCss, /max-width:[^}]+desktop-notice/s, 'a narrow desktop window must not trigger the mobile notice');
 

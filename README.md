@@ -6,7 +6,7 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.7.1**
+Current release: **0.7.2**
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -16,13 +16,13 @@ fullscreen launch, and idle dedicated-server wakeup.
 ## Quick start
 
 The framework repository is self-contained. It does not include a game engine,
-compiled game WASM, or proprietary game data:
+compiled game WASM, or game data:
 
 ```bash
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.7.1
+./scripts/build-base-image.sh wasm-game-framework:0.7.2
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -40,7 +40,7 @@ public title assets. The framework supplies the document, launcher, styling,
 data boundary, and browser lifecycle; it does not supply the native port.
 
 Mount a persistent `/data` volume when running that image. On first use, the
-administrator uploads the exact legally owned files allowed by
+administrator uploads the exact files allowed by
 `wasm-game-data.json`; subsequent visitors see the normal launcher, and each
 browser keeps a validated private IndexedDB cache for fast reloads.
 
@@ -53,7 +53,9 @@ The browser document itself is framework-owned. A downstream game does not
 ship or maintain `index.html`; it ships only `wasm-game.json`,
 `game-adapter.js`, compiled engine artifacts, and game-specific public assets.
 When `wasm-game.json` exists, the framework server serves its canonical
-`dist/index.html` for `/` and client-side routes.
+`dist/index.html` for `/` and client-side routes. The launcher description is
+optional and appears only when the manifest supplies `description`; the
+framework does not substitute fallback copy.
 
 The canonical document loads the same immutable package files:
 
@@ -131,7 +133,7 @@ and opens installed games in standalone landscape mode. Supply authentic
 192x192 and 512x512 PNGs, or a scalable SVG with `sizes: "any"`, so Chrome can
 offer **Install app** with the correct game artwork. The service worker uses a
 network-first fallback only for the small framework shell. It deliberately
-does not duplicate engine artifacts or proprietary game data; validated owner
+does not duplicate engine artifacts or game data; validated
 files remain in the framework's versioned IndexedDB cache.
 
 The display mode is title/profile policy, not necessarily a user-facing
@@ -185,13 +187,13 @@ set `fullscreen: false` only for a title that cannot support it, or
 `data-shell-dynamic-quality`, and `data-shell-target-fps`. The shell also adds
 a compact “best on desktop” notice for small/coarse-pointer devices.
 
-Proprietary game data does not belong in this package.
+Game data is installed separately from this package.
 
 ## Container provisioning and browser cache
 
 There are deliberately two durable data layers:
 
-1. The administrator provisions legally owned files once into the container's
+1. The administrator provisions the required files once into the container's
    persistent `/data` volume.
 2. Each browser downloads each validated file from that container once and
    retains it in origin-private IndexedDB for fast reloads.
@@ -331,8 +333,8 @@ The Doom, GoldSource, and Source families use this once to emit both forms:
 - unified suite image: `WASM_GAME_VARIANT=suite`;
 - individually branded image: `WASM_GAME_VARIANT=doom2`, `opfor`, `hl2`, etc.
 
-This is a presentation/deployment lock, not a data entitlement mechanism.
-Every variant still validates owner-provided data independently.
+This is a presentation/deployment lock. Every variant still validates its
+required data independently.
 
 The generic static-image builder first creates the exact versioned
 `wasm-game-framework:<version>` base image, then layers only a game site and

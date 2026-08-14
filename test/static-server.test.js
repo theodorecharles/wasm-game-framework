@@ -98,7 +98,7 @@ async function waitFor(url) {
     const workerResponse = await fetch(`${base}/service-worker.js`);
     assert.equal(workerResponse.headers.get('service-worker-allowed'), '/');
     const worker = await workerResponse.text();
-    assert.match(worker, /wasm-game-shell-0\.7\.1/);
+    assert.match(worker, /wasm-game-shell-0\.7\.2/);
     assert.match(worker, /fetch\(event\.request\)/, 'shell cache must refresh from the network before using its fallback');
     assert.doesNotMatch(worker, /game-data/, 'the service worker must not duplicate owner game-data caching');
     const noVariant = await (await fetch(`${base}/game-data/status`)).json();

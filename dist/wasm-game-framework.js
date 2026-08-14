@@ -925,7 +925,7 @@
       const request = loadOptions || {};
       const state = await status();
       if (!state.ready) {
-        const error = new Error('The container still needs its legally owned game data.');
+        const error = new Error('The container still needs its required game data.');
         error.code = 'CONTAINER_DATA_REQUIRED';
         error.status = state;
         throw error;
@@ -999,6 +999,7 @@
     let pixelated = Boolean(config.pixelated);
     const maxDpr = positive(config.maxDpr, 2);
     let resizeFrame = 0;
+    let captureFrame = 0;
     let canvasObserver = null;
     let engineState = Object.values(ENGINE_STATES).includes(config.engineState) ? config.engineState : ENGINE_STATES.LAUNCHER;
     let preferences = null;
@@ -1009,6 +1010,12 @@
 
     function publishInputCapture() {
       const captured = inputCaptured();
+      if (!captured && typeof config.readEngineState === 'function') {
+        const reported = String(config.readEngineState() || '').toLowerCase();
+        if (Object.values(ENGINE_STATES).includes(reported) && reported !== engineState) {
+          setEngineState(reported);
+        }
+      }
       html.dataset.shellInputCaptured = String(captured);
       if (typeof config.onInputCaptureChange === 'function') {
         config.onInputCaptureChange(captured);
@@ -1041,11 +1048,15 @@
     }
 
     function captureAfterInteraction(event) {
-      if (typeof config.readEngineState === 'function') {
-        const reported = config.readEngineState();
-        if (reported && reported !== engineState) setEngineState(reported);
-      }
-      if (engineState === ENGINE_STATES.GAMEPLAY) requestInputCapture(event);
+      if (captureFrame) cancelAnimationFrame(captureFrame);
+      captureFrame = requestAnimationFrame(() => {
+        captureFrame = 0;
+        if (typeof config.readEngineState === 'function') {
+          const reported = String(config.readEngineState() || '').toLowerCase();
+          if (Object.values(ENGINE_STATES).includes(reported) && reported !== engineState) setEngineState(reported);
+        }
+        if (engineState === ENGINE_STATES.GAMEPLAY) requestInputCapture(event);
+      });
     }
 
     function pointerPosition(eventOrX, clientY, pointerOptions) {
@@ -1186,10 +1197,12 @@
     document.addEventListener('keydown', protectCapturedKey, true);
     if (canvas) {
       canvas.addEventListener('pointerdown', requestInputCapture);
-      canvas.addEventListener('pointerup', captureAfterInteraction);
       canvas.addEventListener('pointermove', publishPointer);
       canvas.addEventListener('pointerdown', publishPointerButton);
       canvas.addEventListener('pointerup', publishPointerButton);
+      // Deliver the native menu click first. Capture is decided on the next
+      // animation frame, after the engine has changed menu/gameplay state.
+      canvas.addEventListener('pointerup', captureAfterInteraction);
       canvas.addEventListener('pointerdown', resumeAudio, { passive: true });
       canvas.addEventListener('keydown', resumeAudio, { passive: true });
       canvas.addEventListener('webglcontextlost', event => {
@@ -1307,13 +1320,14 @@
           canvas.removeEventListener('keydown', resumeAudio);
         }
         if (resizeFrame) cancelAnimationFrame(resizeFrame);
+        if (captureFrame) cancelAnimationFrame(captureFrame);
         canvasObserver?.disconnect();
       }
     });
   }
 
   const api = Object.freeze({
-    version: '0.5.3',
+    version: '0.7.2',
     DISPLAY_MODES,
     ENGINE_STATES,
     configure,
