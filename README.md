@@ -6,7 +6,7 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.7.2**
+Current release: **0.7.3**
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -22,7 +22,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.7.2
+./scripts/build-base-image.sh wasm-game-framework:0.7.3
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -48,6 +48,10 @@ The enforced dependency direction is documented in [ARCHITECTURE.md](ARCHITECTUR
 framework behavior flows into an engine-family adapter, then into a small game
 adapter. Framework releases are linked during local development and copied
 with a version/SHA manifest for reproducible offline images.
+
+Use [ADAPTER_RUNBOOK.md](ADAPTER_RUNBOOK.md) when adding or auditing a game.
+It defines the exact state, capture, resize, pointer, identity, profile,
+persistence, audio, Docker, and real-browser acceptance requirements.
 
 The browser document itself is framework-owned. A downstream game does not
 ship or maintain `index.html`; it ships only `wasm-game.json`,
@@ -160,13 +164,16 @@ provisioning -> launcher -> loading -> menu -> gameplay -> paused/debrief
                                                     \-> crashed
 ```
 
-Engine adapters call `shell.setEngineState(state)`. The framework focuses the
-canvas and permits pointer capture only in `gameplay`; entering a menu, pause,
-debrief, launcher, or crash state releases it. Browser defaults for gameplay
-keys are suppressed only while input is actually captured, so Ctrl+Shift+R,
-copy/paste, and normal page controls continue to work outside play. A lost
-capture invokes the adapter's `onCaptureLost` hook so games can open their
-native pause menu.
+Engine adapters report their native state through `readEngineState()`. The
+framework focuses the canvas and captures in `gameplay`; entering a menu,
+pause, debrief, launcher, or crash state releases it. An asynchronous JOIN,
+New Game, or Resume action reports a separate synchronous
+`readCaptureIntent()` while it honestly remains in `loading`, allowing the
+trusted menu click to reserve capture until the first controllable frame.
+Browser defaults for gameplay keys are suppressed only while input is actually
+captured, so Ctrl+Shift+R, copy/paste, and normal page controls continue to
+work outside play. A lost gameplay capture invokes the adapter's
+`captureLost()` hook so the game can open its native pause menu exactly once.
 
 Native menus declare `pointerWidth` and `pointerHeight` in `wasm-game.json`.
 The framework maps client coordinates through the canvas's actual CSS rectangle

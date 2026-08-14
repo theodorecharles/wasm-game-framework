@@ -169,6 +169,7 @@
     });
     adapter = globalThis.WasmGameAdapter;
     if (!adapter || typeof adapter.start !== 'function') throw new Error(`${source} did not register WasmGameAdapter.start().`);
+    WasmGameFramework.validateAdapterContract(config, adapter);
   }
 
   async function refreshDataGate() {
@@ -212,6 +213,7 @@
       graphics: config.graphics !== false, identity: config.identity !== false,
       advanced: config.advanced !== false, engineState: 'launcher',
       readEngineState: () => adapter?.readEngineState?.(context()) || shell?.engineState() || 'launcher',
+      readCaptureIntent: () => adapter?.readCaptureIntent?.(context()) === true,
       onNativeResizeRequest: detail => adapter?.resize?.(detail, context()),
       onCaptureLost: detail => adapter?.captureLost?.(detail, context()),
       onInputCaptureChange: captured => adapter?.inputCaptureChanged?.(captured, context()),

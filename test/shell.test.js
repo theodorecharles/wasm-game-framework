@@ -30,6 +30,24 @@ assert.equal(typeof requireCapabilities, 'function');
 assert.equal(typeof createQualityController, 'function');
 assert.equal(typeof createPersistentFs, 'function');
 assert.equal(typeof createDiagnostics, 'function');
+assert.equal(typeof require('../dist/wasm-game-framework.js').validateAdapterContract, 'function');
+
+const { validateAdapterContract } = require('../dist/wasm-game-framework.js');
+assert.deepEqual(validateAdapterContract({ pointerLock: false }, { start() {} }), {
+  valid: true, nativeResize: false, absolutePointer: false, pointerCapture: false
+});
+assert.throws(
+  () => validateAdapterContract({ nativeManaged: true, pointerLock: false }, { start() {} }),
+  /resize\(\) is required when nativeManaged is enabled/
+);
+assert.throws(
+  () => validateAdapterContract({ pointerWidth: 640, pointerHeight: 480, pointerLock: false }, { start() {} }),
+  /pointerMove\(\).*pointerButton\(\)/s
+);
+assert.throws(
+  () => validateAdapterContract({ pointerLock: true }, { start() {}, readEngineState() {} }),
+  /captureLost\(\).*pointer-lock loss/
+);
 
 assert.deepEqual(fitRect(1920, 1080, 4 / 3, 'contain'), { width: 1440, height: 1080 });
 assert.deepEqual(fitRect(800, 1200, 4 / 3, 'contain'), { width: 800, height: 600 });
@@ -94,8 +112,16 @@ assert.ok(
 );
 assert.match(sharedJs, /captureFrame = requestAnimationFrame\(\(\) => \{/,
   'capture must be evaluated after the native engine receives a frame');
+assert.match(sharedJs, /engineState !== ENGINE_STATES\.LOADING \|\| typeof config\.readCaptureIntent !== 'function'/,
+  'loading capture intent must be separate from the authoritative gameplay state');
+assert.match(sharedJs, /if \(captureDesired\(\)\) requestInputCapture\(event\)/,
+  'a trusted menu gesture must honor synchronous launch capture intent');
 assert.match(sharedJs, /!captured && typeof config\.readEngineState === 'function'/,
   'pointer-lock loss must refresh native state before invoking capture-lost fallback');
+assert.match(sharedJs, /function scheduleFullscreenResize\(\)[\s\S]+samplesRemaining = 3/,
+  'fullscreen transitions must resample Chrome viewport geometry after its first stale frame');
+assert.match(sharedJs, /fullscreenchange', scheduleFullscreenResize/,
+  'fullscreen changes must use the settled viewport resize path');
 assert.match(sharedCss, /\(hover: none\) and \(pointer: coarse\)/, 'desktop notice must require a mobile-like primary pointer');
 assert.doesNotMatch(sharedCss, /max-width:[^}]+desktop-notice/s, 'a narrow desktop window must not trigger the mobile notice');
 

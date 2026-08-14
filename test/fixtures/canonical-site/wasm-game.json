@@ -3,11 +3,21 @@
   "title": "Framework Fixture",
   "kicker": "Test Engine",
   "description": "Canonical document smoke test",
+  "icon": "/fixture-background.svg",
   "background": "/fixture-background.svg",
   "displayMode": "4:3",
   "canvasWidth": 320,
   "canvasHeight": 240,
   "graphics": false,
   "identity": false,
+  "fullscreen": true,
+  "pwa": {
+    "name": "Framework Fixture",
+    "shortName": "Fixture",
+    "description": "Canonical browser game fixture.",
+    "icons": [
+      { "src": "/fixture-background.svg", "sizes": "any", "type": "image/svg+xml" }
+    ]
+  },
   "adapter": "/game-adapter.js"
 }

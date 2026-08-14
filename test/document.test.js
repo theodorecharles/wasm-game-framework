@@ -35,6 +35,8 @@ assert.doesNotMatch(
 );
 assert.match(bootstrap, /fetch\('\/wasm-game\.json'/);
 assert.match(bootstrap, /WasmGameAdapter\.start/);
+assert.match(bootstrap, /validateAdapterContract\(config, adapter\)/,
+  'the canonical bootstrap must reject incomplete native adapter seams');
 assert.match(bootstrap, /text\(elements\.description, config\.description\)/,
   'launcher description must be controlled only by the game manifest');
 assert.doesNotMatch(bootstrap, /elements\.description[^\n]*(?:game data|files?|cache)/i,
@@ -42,6 +44,8 @@ assert.doesNotMatch(bootstrap, /elements\.description[^\n]*(?:game data|files?|c
 assert.match(bootstrap, /createContainerDataClient\(\{ variant/);
 assert.match(bootstrap, /displayMode: config\.displayMode/);
 assert.match(bootstrap, /adapter\?\.readEngineState/);
+assert.match(bootstrap, /adapter\?\.readCaptureIntent/,
+  'the adapter must be able to reserve capture through an honest loading state');
 assert.match(bootstrap, /adapter\?\.resize/);
 assert.match(bootstrap, /includeOptional: true/);
 assert.match(bootstrap, /config\.background/);

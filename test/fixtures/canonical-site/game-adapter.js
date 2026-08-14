@@ -4,5 +4,8 @@ globalThis.WasmGameAdapter = {
   },
   readEngineState() {
     return 'menu';
+  },
+  captureLost() {
+    return undefined;
   }
 };

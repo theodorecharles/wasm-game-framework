@@ -72,6 +72,38 @@
     CRASHED: 'crashed'
   });
 
+  function validateAdapterContract(gameConfig, adapter) {
+    const config = gameConfig || {};
+    const seam = adapter || {};
+    const errors = [];
+    const requireMethod = (name, reason) => {
+      if (typeof seam[name] !== 'function') errors.push(`${name}() is required ${reason}.`);
+    };
+
+    requireMethod('start', 'to start the native runtime');
+    if (config.nativeManaged === true) {
+      requireMethod('resize', 'when nativeManaged is enabled');
+    }
+    if (config.pointerWidth != null || config.pointerHeight != null || config.pointerFit != null) {
+      requireMethod('pointerMove', 'when native menu pointer coordinates are declared');
+      requireMethod('pointerButton', 'when native menu pointer coordinates are declared');
+    }
+    if (config.pointerLock !== false) {
+      requireMethod('readEngineState', 'when gameplay pointer capture is enabled');
+      requireMethod('captureLost', 'so Escape and pointer-lock loss return control to the native menu');
+    }
+
+    if (errors.length) {
+      throw new Error(`Game adapter contract failed:\n- ${errors.join('\n- ')}`);
+    }
+    return Object.freeze({
+      valid: true,
+      nativeResize: config.nativeManaged === true,
+      absolutePointer: config.pointerWidth != null || config.pointerHeight != null || config.pointerFit != null,
+      pointerCapture: config.pointerLock !== false
+    });
+  }
+
   function normalizeDisplayMode(value) {
     const mode = String(value || '').toLowerCase();
     if (mode === '4:3' || mode === '4x3' || mode === 'four-three') return DISPLAY_MODES.FOUR_THREE;
@@ -999,6 +1031,7 @@
     let pixelated = Boolean(config.pixelated);
     const maxDpr = positive(config.maxDpr, 2);
     let resizeFrame = 0;
+    let fullscreenResizeFrame = 0;
     let captureFrame = 0;
     let canvasObserver = null;
     let engineState = Object.values(ENGINE_STATES).includes(config.engineState) ? config.engineState : ENGINE_STATES.LAUNCHER;
@@ -1006,6 +1039,12 @@
 
     function inputCaptured() {
       return Boolean(canvas && document.pointerLockElement === canvas);
+    }
+
+    function captureDesired() {
+      if (engineState === ENGINE_STATES.GAMEPLAY) return true;
+      if (engineState !== ENGINE_STATES.LOADING || typeof config.readCaptureIntent !== 'function') return false;
+      try { return config.readCaptureIntent() === true; } catch (_) { return false; }
     }
 
     function publishInputCapture() {
@@ -1030,7 +1069,7 @@
     }
 
     function requestInputCapture(event) {
-      if (!canvas || config.pointerLock !== true || engineState !== ENGINE_STATES.GAMEPLAY || inputCaptured()) return false;
+      if (!canvas || config.pointerLock !== true || !captureDesired() || inputCaptured()) return false;
       if (typeof config.shouldCapture === 'function' && !config.shouldCapture(event, canvas)) return false;
       try {
         const pending = canvas.requestPointerLock?.();
@@ -1055,7 +1094,7 @@
           const reported = String(config.readEngineState() || '').toLowerCase();
           if (Object.values(ENGINE_STATES).includes(reported) && reported !== engineState) setEngineState(reported);
         }
-        if (engineState === ENGINE_STATES.GAMEPLAY) requestInputCapture(event);
+        if (captureDesired()) requestInputCapture(event);
       });
     }
 
@@ -1190,9 +1229,22 @@
       resizeFrame = requestAnimationFrame(resize);
     }
 
+    function scheduleFullscreenResize() {
+      scheduleResize();
+      if (fullscreenResizeFrame) cancelAnimationFrame(fullscreenResizeFrame);
+      let samplesRemaining = 3;
+      const sampleSettledViewport = () => {
+        fullscreenResizeFrame = 0;
+        resize();
+        samplesRemaining -= 1;
+        if (samplesRemaining > 0) fullscreenResizeFrame = requestAnimationFrame(sampleSettledViewport);
+      };
+      fullscreenResizeFrame = requestAnimationFrame(sampleSettledViewport);
+    }
+
     window.addEventListener('resize', scheduleResize, { passive: true });
     window.visualViewport?.addEventListener('resize', scheduleResize, { passive: true });
-    document.addEventListener('fullscreenchange', scheduleResize);
+    document.addEventListener('fullscreenchange', scheduleFullscreenResize);
     document.addEventListener('pointerlockchange', publishInputCapture);
     document.addEventListener('keydown', protectCapturedKey, true);
     if (canvas) {
@@ -1235,11 +1287,11 @@
       const prior = engineState;
       engineState = value;
       html.dataset.shellEngineState = engineState;
-      const shouldRelease = engineState !== ENGINE_STATES.GAMEPLAY;
+      const shouldRelease = !captureDesired();
       if (shouldRelease && inputCaptured()) {
         try { document.exitPointerLock?.(); } catch (_) {}
       }
-      if (engineState === ENGINE_STATES.GAMEPLAY) {
+      if (captureDesired()) {
         canvas?.focus?.({ preventScroll: true });
         if (stateOptions?.capture === true) requestInputCapture(stateOptions.event);
       }
@@ -1307,7 +1359,7 @@
       destroy() {
         window.removeEventListener('resize', scheduleResize);
         window.visualViewport?.removeEventListener('resize', scheduleResize);
-        document.removeEventListener('fullscreenchange', scheduleResize);
+        document.removeEventListener('fullscreenchange', scheduleFullscreenResize);
         document.removeEventListener('pointerlockchange', publishInputCapture);
         document.removeEventListener('keydown', protectCapturedKey, true);
         if (canvas) {
@@ -1320,6 +1372,7 @@
           canvas.removeEventListener('keydown', resumeAudio);
         }
         if (resizeFrame) cancelAnimationFrame(resizeFrame);
+        if (fullscreenResizeFrame) cancelAnimationFrame(fullscreenResizeFrame);
         if (captureFrame) cancelAnimationFrame(captureFrame);
         canvasObserver?.disconnect();
       }
@@ -1327,9 +1380,10 @@
   }
 
   const api = Object.freeze({
-    version: '0.7.2',
+    version: '0.7.3',
     DISPLAY_MODES,
     ENGINE_STATES,
+    validateAdapterContract,
     configure,
     fitRect,
     mapPointerPoint,

@@ -45,7 +45,8 @@ engine:
 - variant-aware PWA metadata, install lifecycle, safe shell fallback caching,
   and fullscreen-on-Play preference;
 - explicit `4:3`, `16:9`, and dynamic native-acknowledged display modes, DPR
-  policy, fullscreen, and context-loss boundaries;
+  policy, multi-frame post-fullscreen viewport settlement, fullscreen, and
+  context-loss boundaries;
 - player identity, graphics/FPS preferences, runtime state, pointer capture,
   cursor release, browser-shortcut boundaries, and desktop capability notice;
 - browser/platform capability detection and actionable unsupported-browser
@@ -88,6 +89,29 @@ transitions; acknowledge dynamic native buffer sizes; provide the engine action
 used when pointer capture is lost; and translate the common WASD/mouse policy
 into native bindings. It does not implement its own launcher, provisioning
 screen, pointer-lock manager, mobile warning, or canvas sizing CSS.
+
+The canonical bootstrap validates the adapter seam before enabling Play. A
+package that declares native-managed resizing must implement `resize()`. A
+package that declares a native menu coordinate space must implement both
+`pointerMove()` and `pointerButton()`. A package that enables gameplay pointer
+capture must implement `readEngineState()` and `captureLost()`. Engine-family
+tests must additionally prove identity handoff, exact loading/menu/gameplay
+transitions, immediate native backbuffer acknowledgement, capture on gameplay
+entry and Resume, release on Escape, profile application, and save/data-cache
+behavior in a real browser.
+
+Engine repositories run the reusable static half of that gate against their
+staged public directory:
+
+```bash
+node ../wasm-game-framework/scripts/check-game-package.js build/site
+```
+
+This validates every suite variant, declared display and pointer geometry,
+required adapter methods, PWA names/icons, fullscreen policy, and the boundary
+between normal launcher copy and missing-data instructions. It complements—it
+does not replace—the interactive state, input, resize, audio, and rendering
+checks above.
 
 ## Propagation
 
