@@ -86,8 +86,8 @@ function pwaManifest(url) {
 
 function serviceWorkerSource() {
   const cacheName = `wasm-game-shell-${frameworkPackage.version}`;
-  const shellPaths = ['/', '/shared-shell/wolfwasm-shell.css', '/shared-shell/wolfwasm-shell.js',
-    '/shared-shell/wolfwasm-bootstrap.js', '/wasm-game.json', '/game-adapter.js'];
+  const shellPaths = ['/', '/shared-shell/wasm-game-framework.css', '/shared-shell/wasm-game-framework.js',
+    '/shared-shell/wasm-game-bootstrap.js', '/wasm-game.json', '/game-adapter.js'];
   return `'use strict';\n` +
     `const CACHE = ${JSON.stringify(cacheName)};\n` +
     `const SHELL = ${JSON.stringify(shellPaths)};\n` +

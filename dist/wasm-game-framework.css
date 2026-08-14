@@ -8,42 +8,42 @@
 
 :root {
   color-scheme: dark;
-  --ww-shell-accent: #c4a35a;
-  --ww-shell-accent-strong: #f0d48a;
-  --ww-shell-panel: rgba(16, 12, 8, 0.96);
-  --ww-shell-field: #16110b;
-  --ww-shell-text: #e6d7b0;
-  --ww-shell-muted: #b8a57a;
-  --ww-shell-danger: #e07060;
-  --ww-shell-border: #6b542c;
-  --ww-shell-background-image: none;
-  --ww-shell-background-position: center;
-  --ww-shell-background-size: cover;
+  --wasm-game-framework-accent: #c4a35a;
+  --wasm-game-framework-accent-strong: #f0d48a;
+  --wasm-game-framework-panel: rgba(16, 12, 8, 0.96);
+  --wasm-game-framework-field: #16110b;
+  --wasm-game-framework-text: #e6d7b0;
+  --wasm-game-framework-muted: #b8a57a;
+  --wasm-game-framework-danger: #e07060;
+  --wasm-game-framework-border: #6b542c;
+  --wasm-game-framework-background-image: none;
+  --wasm-game-framework-background-position: center;
+  --wasm-game-framework-background-size: cover;
 }
 
-html.ww-shell,
-html.ww-shell body {
+html.wasm-game-framework,
+html.wasm-game-framework body {
   width: 100%;
   height: 100%;
   margin: 0;
   overflow: hidden;
   background: #000;
-  color: var(--ww-shell-text);
+  color: var(--wasm-game-framework-text);
   font-family: "Liberation Sans", "Segoe UI", system-ui, sans-serif;
 }
 
-.ww-shell *,
-.ww-shell *::before,
-.ww-shell *::after {
+.wasm-game-framework *,
+.wasm-game-framework *::before,
+.wasm-game-framework *::after {
   box-sizing: border-box;
 }
 
-.ww-shell [hidden] {
+.wasm-game-framework [hidden] {
   display: none !important;
 }
 
-.ww-shell [data-shell-launcher],
-.ww-shell [data-shell-loading] {
+.wasm-game-framework [data-shell-launcher],
+.wasm-game-framework [data-shell-loading] {
   position: fixed !important;
   inset: 0 !important;
   z-index: 40;
@@ -60,43 +60,43 @@ html.ww-shell body {
   background-color: #0b0b0b;
   background-image:
     linear-gradient(rgb(5 4 3 / 42%), rgb(5 4 3 / 68%)),
-    var(--ww-shell-background-image),
+    var(--wasm-game-framework-background-image),
     radial-gradient(ellipse at center, #2a2114 0%, #0b0b0b 70%);
-  background-position: center, var(--ww-shell-background-position), center;
-  background-size: cover, var(--ww-shell-background-size), cover;
+  background-position: center, var(--wasm-game-framework-background-position), center;
+  background-size: cover, var(--wasm-game-framework-background-size), cover;
   background-repeat: no-repeat;
 }
 
-.ww-shell [data-shell-loading] {
+.wasm-game-framework [data-shell-loading] {
   z-index: 50;
 }
 
-.ww-shell [data-shell-card] {
+.wasm-game-framework [data-shell-card] {
   width: min(30rem, 94vw) !important;
   max-width: 100% !important;
   margin: auto !important;
   padding: clamp(1.25rem, 4vw, 2.2rem) !important;
-  border: 1px solid var(--ww-shell-border) !important;
+  border: 1px solid var(--wasm-game-framework-border) !important;
   border-radius: 0 !important;
-  background: var(--ww-shell-panel) !important;
+  background: var(--wasm-game-framework-panel) !important;
   box-shadow: 0 0 0 1px #000, 0 18px 40px rgb(0 0 0 / 55%) !important;
   text-align: left;
 }
 
-.ww-shell [data-shell-card="wide"] {
+.wasm-game-framework [data-shell-card="wide"] {
   width: min(54rem, 94vw) !important;
 }
 
-.ww-shell [data-shell-kicker] {
+.wasm-game-framework [data-shell-kicker] {
   margin: 0 0 0.2rem !important;
-  color: var(--ww-shell-accent) !important;
+  color: var(--wasm-game-framework-accent) !important;
   font-size: 0.78rem !important;
   font-weight: 700;
   letter-spacing: 0.24em;
   text-transform: uppercase;
 }
 
-.ww-shell [data-shell-game-icon] {
+.wasm-game-framework [data-shell-game-icon] {
   display: block;
   width: 64px;
   height: 64px;
@@ -104,27 +104,27 @@ html.ww-shell body {
   object-fit: contain;
 }
 
-.ww-shell [data-shell-game-icon][data-shell-pixelated="true"] {
+.wasm-game-framework [data-shell-game-icon][data-shell-pixelated="true"] {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
-.ww-shell [data-shell-title],
-.ww-shell [data-shell-card] > h1 {
+.wasm-game-framework [data-shell-title],
+.wasm-game-framework [data-shell-card] > h1 {
   margin: 0 0 0.55rem !important;
-  color: var(--ww-shell-accent-strong) !important;
+  color: var(--wasm-game-framework-accent-strong) !important;
   font-size: clamp(1.55rem, 5vw, 2.15rem) !important;
   line-height: 1.1;
   letter-spacing: 0.035em;
 }
 
-.ww-shell [data-shell-card] p {
+.wasm-game-framework [data-shell-card] p {
   margin: 0 0 1.15rem;
-  color: var(--ww-shell-muted);
+  color: var(--wasm-game-framework-muted);
   line-height: 1.45;
 }
 
-.ww-shell [data-shell-card] label {
+.wasm-game-framework [data-shell-card] label {
   display: grid;
   gap: 0.4rem;
   margin: 0.8rem 0;
@@ -134,28 +134,28 @@ html.ww-shell body {
   text-transform: uppercase;
 }
 
-.ww-shell [data-shell-card] input,
-.ww-shell [data-shell-card] select,
-.ww-shell [data-shell-card] button,
-.ww-shell [data-shell-card] textarea {
+.wasm-game-framework [data-shell-card] input,
+.wasm-game-framework [data-shell-card] select,
+.wasm-game-framework [data-shell-card] button,
+.wasm-game-framework [data-shell-card] textarea {
   width: 100%;
   min-width: 0;
   padding: 0.68rem 0.75rem;
   border: 1px solid #7a6234;
   border-radius: 0;
-  background: var(--ww-shell-field);
+  background: var(--wasm-game-framework-field);
   color: #f3e6c4;
   font: inherit;
 }
 
-.ww-shell [data-shell-card] input[type="checkbox"],
-.ww-shell [data-shell-card] input[type="radio"] {
+.wasm-game-framework [data-shell-card] input[type="checkbox"],
+.wasm-game-framework [data-shell-card] input[type="radio"] {
   width: auto;
-  accent-color: var(--ww-shell-accent);
+  accent-color: var(--wasm-game-framework-accent);
 }
 
-.ww-shell [data-shell-card] button {
-  border-color: var(--ww-shell-accent);
+.wasm-game-framework [data-shell-card] button {
+  border-color: var(--wasm-game-framework-accent);
   background: #3c2c12;
   color: #f4e4b2;
   font-weight: 700;
@@ -164,33 +164,33 @@ html.ww-shell body {
   cursor: pointer;
 }
 
-.ww-shell [data-shell-card] button:hover,
-.ww-shell [data-shell-card] button:focus-visible {
+.wasm-game-framework [data-shell-card] button:hover,
+.wasm-game-framework [data-shell-card] button:focus-visible {
   background: #5a4218;
 }
 
-.ww-shell [data-shell-card] button:disabled {
+.wasm-game-framework [data-shell-card] button:disabled {
   opacity: 0.55;
   cursor: wait;
 }
 
 /* Native game menus draw their own cursor. They never hold pointer lock, but
  * the host pointer remains hidden over the surface so users see one cursor. */
-.ww-shell[data-shell-input-captured="true"] [data-shell-canvas],
-.ww-shell[data-shell-engine-state="menu"] [data-shell-canvas],
-.ww-shell[data-shell-engine-state="paused"] [data-shell-canvas],
-.ww-shell[data-shell-engine-state="debrief"] [data-shell-canvas] {
+.wasm-game-framework[data-shell-input-captured="true"] [data-shell-canvas],
+.wasm-game-framework[data-shell-engine-state="menu"] [data-shell-canvas],
+.wasm-game-framework[data-shell-engine-state="paused"] [data-shell-canvas],
+.wasm-game-framework[data-shell-engine-state="debrief"] [data-shell-canvas] {
   cursor: none !important;
 }
 
-.ww-shell [data-shell-advanced] {
+.wasm-game-framework [data-shell-advanced] {
   margin: 0.9rem 0;
   padding: 0.72rem 0.8rem 0.8rem;
   border: 1px solid #534526;
   background: rgb(6 5 4 / 35%);
 }
 
-.ww-shell [data-shell-advanced] summary {
+.wasm-game-framework [data-shell-advanced] summary {
   color: #c4b48a;
   cursor: pointer;
   font-size: 0.86rem;
@@ -198,22 +198,22 @@ html.ww-shell body {
   text-transform: uppercase;
 }
 
-.ww-shell [data-shell-advanced][open] summary {
+.wasm-game-framework [data-shell-advanced][open] summary {
   margin-bottom: 0.8rem;
 }
 
-.ww-shell [data-shell-status] {
+.wasm-game-framework [data-shell-status] {
   min-height: 1.4rem;
   margin: 0.75rem 0 0 !important;
-  color: var(--ww-shell-muted) !important;
+  color: var(--wasm-game-framework-muted) !important;
   white-space: pre-wrap;
 }
 
-.ww-shell [data-shell-error] {
-  color: var(--ww-shell-danger) !important;
+.wasm-game-framework [data-shell-error] {
+  color: var(--wasm-game-framework-danger) !important;
 }
 
-.ww-shell [data-shell-console] {
+.wasm-game-framework [data-shell-console] {
   width: 100%;
   max-height: min(19rem, 42vh);
   margin-top: 0.9rem;
@@ -230,7 +230,7 @@ html.ww-shell body {
   user-select: text;
 }
 
-.ww-shell [data-shell-runtime] {
+.wasm-game-framework [data-shell-runtime] {
   position: fixed !important;
   inset: 0 !important;
   z-index: 10;
@@ -248,15 +248,15 @@ html.ww-shell body {
   box-shadow: none !important;
 }
 
-.ww-shell [data-shell-runtime][hidden] {
+.wasm-game-framework [data-shell-runtime][hidden] {
   display: none !important;
 }
 
-.ww-shell [data-shell-canvas] {
+.wasm-game-framework [data-shell-canvas] {
   display: block !important;
   flex: none !important;
-  width: var(--ww-shell-canvas-width, 100%) !important;
-  height: var(--ww-shell-canvas-height, 100%) !important;
+  width: var(--wasm-game-framework-canvas-width, 100%) !important;
+  height: var(--wasm-game-framework-canvas-height, 100%) !important;
   max-width: none !important;
   max-height: none !important;
   margin: 0 !important;
@@ -267,15 +267,15 @@ html.ww-shell body {
   object-fit: fill !important;
 }
 
-.ww-shell [data-shell-canvas][data-shell-pixelated="true"] {
+.wasm-game-framework [data-shell-canvas][data-shell-pixelated="true"] {
   image-rendering: pixelated !important;
 }
 
-.ww-shell [data-shell-canvas][data-shell-pixelated="false"] {
+.wasm-game-framework [data-shell-canvas][data-shell-pixelated="false"] {
   image-rendering: auto !important;
 }
 
-.ww-shell [data-shell-runtime-controls] {
+.wasm-game-framework [data-shell-runtime-controls] {
   position: fixed;
   z-index: 20;
   top: 0.7rem;
@@ -284,7 +284,7 @@ html.ww-shell body {
   gap: 0.45rem;
 }
 
-.ww-shell [data-shell-runtime-controls] button {
+.wasm-game-framework [data-shell-runtime-controls] button {
   width: auto;
   padding: 0.45rem 0.65rem;
   border: 1px solid rgb(196 163 90 / 60%);
@@ -292,7 +292,7 @@ html.ww-shell body {
   color: #f4e4b2;
 }
 
-.ww-shell [data-shell-overlay] {
+.wasm-game-framework [data-shell-overlay] {
   position: fixed;
   inset: 0;
   z-index: 15;
@@ -302,19 +302,19 @@ html.ww-shell body {
   background: rgb(0 0 0 / 78%);
 }
 
-.ww-shell [data-shell-drop] {
+.wasm-game-framework [data-shell-drop] {
   padding: 1rem;
   border: 1px dashed #8c7544;
-  color: var(--ww-shell-muted);
+  color: var(--wasm-game-framework-muted);
   text-align: center;
 }
 
-.ww-shell [data-shell-drop][data-dragging="true"] {
-  border-color: var(--ww-shell-accent-strong);
+.wasm-game-framework [data-shell-drop][data-dragging="true"] {
+  border-color: var(--wasm-game-framework-accent-strong);
   background: rgb(90 66 24 / 30%);
 }
 
-.ww-shell [data-shell-list] {
+.wasm-game-framework [data-shell-list] {
   max-height: 11rem;
   overflow: auto;
   padding-left: 1.4rem;
@@ -323,20 +323,20 @@ html.ww-shell body {
 
 /* Keep this after every display declaration: shell surfaces use !important
    layout rules, so the native hidden state must win the cascade. */
-.ww-shell [data-shell-launcher][hidden],
-.ww-shell [data-shell-loading][hidden],
-.ww-shell [data-shell-runtime][hidden],
-.ww-shell [data-shell-overlay][hidden] {
+.wasm-game-framework [data-shell-launcher][hidden],
+.wasm-game-framework [data-shell-loading][hidden],
+.wasm-game-framework [data-shell-runtime][hidden],
+.wasm-game-framework [data-shell-overlay][hidden] {
   display: none !important;
 }
 
-.ww-shell [data-shell-pixelated="true"] {
+.wasm-game-framework [data-shell-pixelated="true"] {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
 @media (max-width: 560px) {
-  .ww-shell [data-shell-card] {
+  .wasm-game-framework [data-shell-card] {
     padding: 1.2rem !important;
   }
 }

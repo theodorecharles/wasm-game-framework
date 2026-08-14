@@ -1,6 +1,6 @@
 {
   "name": "@wasm-game-framework/browser",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": false,
   "description": "Reusable launcher, data, viewport, PWA, and lifecycle contract for browser-native games",
   "license": "MIT",
@@ -8,10 +8,10 @@
     "type": "git",
     "url": "git+https://github.com/theodorecharles/wasm-game-framework.git"
   },
-  "main": "dist/wolfwasm-shell.js",
+  "main": "dist/wasm-game-framework.js",
   "exports": {
-    ".": "./dist/wolfwasm-shell.js",
-    "./style.css": "./dist/wolfwasm-shell.css",
+    ".": "./dist/wasm-game-framework.js",
+    "./style.css": "./dist/wasm-game-framework.css",
     "./server/lifecycle": "./server/lifecycle.js",
     "./package.json": "./package.json"
   },

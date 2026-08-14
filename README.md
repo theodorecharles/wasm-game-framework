@@ -6,7 +6,7 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.6.1**
+Current release: **0.7.0**
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -15,22 +15,29 @@ fullscreen launch, and idle dedicated-server wakeup.
 
 ## Quick start
 
-The framework is intentionally consumed from source while engine ports are
-being developed:
+The framework repository is self-contained. It does not include a game engine,
+compiled game WASM, or proprietary game data:
 
 ```bash
+git clone https://github.com/theodorecharles/wasm-game-framework.git
+cd wasm-game-framework
 npm test
-./scripts/install-browser-package.sh ../quake2-wasm/web/shared-shell copy
-./scripts/build-base-image.sh wasm-game-framework:0.6.1
+./scripts/build-base-image.sh wasm-game-framework:0.7.0
 ```
 
-A framework-served downstream web directory contains `wasm-game.json`,
-`wasm-game-data.json`, `game-adapter.js`, its compiled engine artifacts, and
-public title assets. Build a retail-free image with:
+To integrate a separate downstream game, point the installer and image builder
+at that game's compiled web directory:
 
 ```bash
-./scripts/build-static-image.sh ../quake2-wasm/web quake2-wasm:dev
+game_site=/absolute/path/to/my-game-wasm/web
+./scripts/install-browser-package.sh "$game_site/shared-shell" copy
+./scripts/build-static-image.sh "$game_site" my-game-wasm:dev
 ```
+
+A framework-served downstream directory contains `wasm-game.json`,
+`wasm-game-data.json`, `game-adapter.js`, its compiled engine artifacts, and
+public title assets. The framework supplies the document, launcher, styling,
+data boundary, and browser lifecycle; it does not supply the native port.
 
 Mount a persistent `/data` volume when running that image. On first use, the
 administrator uploads the exact legally owned files allowed by
@@ -51,12 +58,12 @@ When `wasm-game.json` exists, the framework server serves its canonical
 The canonical document loads the same immutable package files:
 
 ```html
-<link rel="stylesheet" href="/shared-shell/wolfwasm-shell.css">
-<script src="/shared-shell/wolfwasm-shell.js"></script>
-<script src="/shared-shell/wolfwasm-bootstrap.js"></script>
+<link rel="stylesheet" href="/shared-shell/wasm-game-framework.css">
+<script src="/shared-shell/wasm-game-framework.js"></script>
+<script src="/shared-shell/wasm-game-bootstrap.js"></script>
 ```
 
-Then it calls `WolfWasmShell.configure()` with only engine-specific policy:
+Then it calls `WasmGameFramework.configure()` with only engine-specific policy:
 
 - a `4:3`, `16:9`, or `dynamic` display contract;
 - whether canvas pixels should be crisp;
@@ -247,7 +254,7 @@ later through the same exact allowlisted setup endpoint. Calling
 `provision(source, { includeOptional: true })` explicitly requests that later
 optional-data pass.
 
-`WolfWasmShell.createDataCache()` stores already validated owner files as
+`WasmGameFramework.createDataCache()` stores already validated owner files as
 Blobs in a per-game IndexedDB database. `getOrLoad()` checks that private cache
 first, deduplicates simultaneous requests, and calls the container download
 loader only on a true miss. A cache-version bump invalidates prior records
@@ -255,7 +262,7 @@ without redownloading unchanged code assets. `persist()` requests durable
 browser storage during the Play gesture and reports quota estimates.
 
 ```js
-const data = WolfWasmShell.createDataCache({
+const data = WasmGameFramework.createDataCache({
   namespace: 'doom-suite',
   version: 'iwad-policy-v1'
 });
@@ -297,7 +304,7 @@ gesture so loading feedback starts immediately while the native server wakes.
 
 ## Suite and single-title images
 
-`WolfWasmShell.resolveDeployment()` is the common deployment contract for a
+`WasmGameFramework.resolveDeployment()` is the common deployment contract for a
 shared engine family. A suite image leaves its title selector visible. A
 single-title image injects `WASM_GAME_VARIANT` before the launcher loads; the
 same launcher then selects and locks that title and hides only the selector.
@@ -305,9 +312,9 @@ URL query selection remains available in suite builds for portal shortcuts.
 
 ```html
 <script src="/wasm-game-config.js"></script>
-<script src="/shared-shell/wolfwasm-shell.js"></script>
+<script src="/shared-shell/wasm-game-framework.js"></script>
 <script>
-  const deployment = WolfWasmShell.resolveDeployment({
+  const deployment = WasmGameFramework.resolveDeployment({
     selector: '#game',
     variants: gameDefinitions,
     defaultVariant: 'doom'

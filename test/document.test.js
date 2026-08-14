@@ -6,7 +6,19 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'dist', 'index.html'), 'utf8');
-const bootstrap = fs.readFileSync(path.join(root, 'dist', 'wolfwasm-bootstrap.js'), 'utf8');
+const bootstrap = fs.readFileSync(path.join(root, 'dist', 'wasm-game-bootstrap.js'), 'utf8');
+const framework = fs.readFileSync(path.join(root, 'dist', 'wasm-game-framework.js'), 'utf8');
+const stylesheet = fs.readFileSync(path.join(root, 'dist', 'wasm-game-framework.css'), 'utf8');
+
+for (const currentFile of ['wasm-game-framework.js', 'wasm-game-framework.css', 'wasm-game-bootstrap.js']) {
+  assert.equal(fs.existsSync(path.join(root, 'dist', currentFile)), true, `${currentFile} must be published`);
+}
+for (const legacyFile of ['wolfwasm-shell.js', 'wolfwasm-shell.css', 'wolfwasm-bootstrap.js']) {
+  assert.equal(fs.existsSync(path.join(root, 'dist', legacyFile)), false, `${legacyFile} must not remain`);
+}
+assert.doesNotMatch(`${html}\n${bootstrap}\n${framework}\n${stylesheet}`, /WolfWasm|wolfwasm|ww-shell|--ww-/,
+  'the public framework surface must use only generic names');
+assert.match(framework, /root\.WasmGameFramework = api/);
 
 assert.match(html, /data-shell-launcher/);
 assert.match(html, /data-shell-loading/);
@@ -24,7 +36,7 @@ assert.match(bootstrap, /adapter\?\.readEngineState/);
 assert.match(bootstrap, /adapter\?\.resize/);
 assert.match(bootstrap, /includeOptional: true/);
 assert.match(bootstrap, /config\.background/);
-assert.match(bootstrap, /--ww-shell-background-image/);
+assert.match(bootstrap, /--wasm-game-framework-background-image/);
 assert.match(bootstrap, /link\[rel="icon"\]/);
 assert.match(html, /data-shell-game-icon/);
 assert.match(html, /data-shell-launch-fullscreen/);

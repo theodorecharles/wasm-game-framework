@@ -1,7 +1,7 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  if (root) root.WolfWasmShell = api;
+  if (root) root.WasmGameFramework = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
@@ -935,7 +935,7 @@
       ready.forEach(node => { node.hidden = !state.ready; });
       token.forEach(node => { node.hidden = state.ready || !state.setupTokenRequired; });
       document.documentElement.dataset.shellDataReady = String(state.ready);
-      window.dispatchEvent(new CustomEvent('wolfwasm-shell-data-status', { detail: state }));
+      window.dispatchEvent(new CustomEvent('wasm-game-framework-data-status', { detail: state }));
       return state;
     }
 
@@ -974,7 +974,7 @@
       if (typeof config.onInputCaptureChange === 'function') {
         config.onInputCaptureChange(captured);
       }
-      window.dispatchEvent(new CustomEvent('wolfwasm-shell-input-capture', {
+      window.dispatchEvent(new CustomEvent('wasm-game-framework-input-capture', {
         detail: Object.freeze({ captured, canvas, state: engineState })
       }));
       if (!captured && engineState === ENGINE_STATES.GAMEPLAY && typeof config.onCaptureLost === 'function') {
@@ -1027,7 +1027,7 @@
       const point = pointerPosition(event);
       const detail = Object.freeze({ ...point, state: engineState, canvas });
       config.onPointerMove?.(detail, event);
-      window.dispatchEvent(new CustomEvent('wolfwasm-shell-pointer', { detail }));
+      window.dispatchEvent(new CustomEvent('wasm-game-framework-pointer', { detail }));
     }
 
     function publishPointerButton(event) {
@@ -1052,11 +1052,11 @@
           try { await context.resume(); } catch (_) {}
         }
       }
-      window.dispatchEvent(new CustomEvent('wolfwasm-shell-user-gesture'));
+      window.dispatchEvent(new CustomEvent('wasm-game-framework-user-gesture'));
     }
 
-    html.classList.add('ww-shell');
-    body.classList.add('ww-shell');
+    html.classList.add('wasm-game-framework');
+    body.classList.add('wasm-game-framework');
     if (launcher) launcher.setAttribute('data-shell-launcher', '');
     if (card) card.setAttribute('data-shell-card', config.wideCard ? 'wide' : '');
     if (loading) loading.setAttribute('data-shell-loading', '');
@@ -1081,7 +1081,7 @@
 
     if (config.theme) {
       for (const [name, value] of Object.entries(config.theme)) {
-        if (value) html.style.setProperty(`--ww-shell-${name}`, String(value));
+        if (value) html.style.setProperty(`--wasm-game-framework-${name}`, String(value));
       }
     }
 
@@ -1107,8 +1107,8 @@
       // SDL/Emscripten writes desktop-sized inline width/height styles when a
       // native window is created. Custom properties plus !important CSS keep
       // the browser viewport authoritative without fighting those mutations.
-      canvas.style.setProperty('--ww-shell-canvas-width', `${cssWidth}px`);
-      canvas.style.setProperty('--ww-shell-canvas-height', `${cssHeight}px`);
+      canvas.style.setProperty('--wasm-game-framework-canvas-width', `${cssWidth}px`);
+      canvas.style.setProperty('--wasm-game-framework-canvas-height', `${cssHeight}px`);
       canvas.style.aspectRatio = 'auto';
       if (config.syncBackbuffer) {
         const scale = Math.min(maxDpr, positive(window.devicePixelRatio, 1));
@@ -1131,7 +1131,7 @@
       };
       if (typeof config.onNativeResizeRequest === 'function') config.onNativeResizeRequest(detail);
       if (typeof config.onResize === 'function') config.onResize(detail);
-      window.dispatchEvent(new CustomEvent('wolfwasm-shell-resize', { detail }));
+      window.dispatchEvent(new CustomEvent('wasm-game-framework-resize', { detail }));
       return detail;
     }
 
@@ -1156,11 +1156,11 @@
       canvas.addEventListener('webglcontextlost', event => {
         event.preventDefault();
         config.onContextLost?.(event);
-        window.dispatchEvent(new CustomEvent('wolfwasm-shell-context-lost'));
+        window.dispatchEvent(new CustomEvent('wasm-game-framework-context-lost'));
       });
       canvas.addEventListener('webglcontextrestored', event => {
         config.onContextRestored?.(event);
-        window.dispatchEvent(new CustomEvent('wolfwasm-shell-context-restored'));
+        window.dispatchEvent(new CustomEvent('wasm-game-framework-context-restored'));
       });
     }
     if (runtime && typeof MutationObserver !== 'undefined') {
@@ -1193,7 +1193,7 @@
       }
       const detail = Object.freeze({ prior, state: engineState, captured: inputCaptured() });
       config.onEngineStateChange?.(detail);
-      window.dispatchEvent(new CustomEvent('wolfwasm-shell-engine-state', { detail }));
+      window.dispatchEvent(new CustomEvent('wasm-game-framework-engine-state', { detail }));
       return detail;
     }
 

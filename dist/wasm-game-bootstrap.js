@@ -114,17 +114,17 @@
     elements.canvas.height = Math.max(2, Number(config.canvasHeight) || 480);
     elements.canvas.setAttribute('data-shell-pixelated', config.pixelated ? 'true' : 'false');
     if (config.theme) for (const [name, value] of Object.entries(config.theme)) {
-      document.documentElement.style.setProperty(`--ww-shell-${name}`, String(value));
+      document.documentElement.style.setProperty(`--wasm-game-framework-${name}`, String(value));
     }
     if (config.background) {
       const backgroundUrl = new URL(String(config.background), location.href).href;
-      document.documentElement.style.setProperty('--ww-shell-background-image', `url(${JSON.stringify(backgroundUrl)})`);
-      document.documentElement.style.setProperty('--ww-shell-background-position', String(config.backgroundPosition || 'center'));
-      document.documentElement.style.setProperty('--ww-shell-background-size', String(config.backgroundSize || 'cover'));
+      document.documentElement.style.setProperty('--wasm-game-framework-background-image', `url(${JSON.stringify(backgroundUrl)})`);
+      document.documentElement.style.setProperty('--wasm-game-framework-background-position', String(config.backgroundPosition || 'center'));
+      document.documentElement.style.setProperty('--wasm-game-framework-background-size', String(config.backgroundSize || 'cover'));
     } else {
-      document.documentElement.style.setProperty('--ww-shell-background-image', 'none');
+      document.documentElement.style.setProperty('--wasm-game-framework-background-image', 'none');
     }
-    dataClient = WolfWasmShell.createContainerDataClient({ variant: rootConfig.variants ? variant : '' });
+    dataClient = WasmGameFramework.createContainerDataClient({ variant: rootConfig.variants ? variant : '' });
   }
 
   function setStatus(message, error) {
@@ -150,7 +150,7 @@
 
   function context() {
     return Object.freeze({
-      framework: WolfWasmShell, shell, dataClient, config, rootConfig, variant, elements,
+      framework: WasmGameFramework, shell, dataClient, config, rootConfig, variant, elements,
       preferences: shell.preferences, setStatus, setLoading, log,
       setEngineState: (state, options) => shell.setEngineState(state, options),
       showLauncher: () => shell.showLauncher(), showLoading: () => shell.showLoading(),
@@ -200,7 +200,7 @@
       elements.variantRow.hidden = String(globalThis.WASM_GAME_VARIANT || 'suite') !== 'suite';
     }
     applyConfig();
-    shell = WolfWasmShell.configure({
+    shell = WasmGameFramework.configure({
       launcher: elements.launcher, card: elements.form, loading: elements.loading,
       runtime: elements.runtime, canvas: elements.canvas,
       displayMode: config.displayMode || '4:3', pixelated: Boolean(config.pixelated),

@@ -15,7 +15,7 @@ const {
   createContainerDataClient,
   validateOwnerFile,
   mountOwnerFiles
-} = require('../dist/wolfwasm-shell.js');
+} = require('../dist/wasm-game-framework.js');
 
 assert.equal(typeof createContainerDataClient, 'function');
 assert.equal(typeof detectCapabilities, 'function');
@@ -74,11 +74,11 @@ assert.deepEqual(resolveDisplayRect(1633, 594, 'dynamic', {
   width: 1633, height: 594, displayMode: 'dynamic', nativeSynchronized: true
 });
 assert.match(
-  require('node:fs').readFileSync(require('node:path').join(__dirname, '../dist/wolfwasm-shell.css'), 'utf8'),
+  require('node:fs').readFileSync(require('node:path').join(__dirname, '../dist/wasm-game-framework.css'), 'utf8'),
   /data-shell-engine-state="menu"/,
   'the shared shell must hide the host cursor while a native menu owns it'
 );
-const sharedCss = require('node:fs').readFileSync(require('node:path').join(__dirname, '../dist/wolfwasm-shell.css'), 'utf8');
+const sharedCss = require('node:fs').readFileSync(require('node:path').join(__dirname, '../dist/wasm-game-framework.css'), 'utf8');
 assert.match(sharedCss, /\(hover: none\) and \(pointer: coarse\)/, 'desktop notice must require a mobile-like primary pointer');
 assert.doesNotMatch(sharedCss, /max-width:[^}]+desktop-notice/s, 'a narrow desktop window must not trigger the mobile notice');
 

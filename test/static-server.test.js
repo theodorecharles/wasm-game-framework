@@ -79,7 +79,7 @@ async function waitFor(url) {
     const documentResponse = await waitFor(`${base}/`);
     const documentText = await documentResponse.text();
     assert.match(documentText, /data-shell-launcher/);
-    assert.match(documentText, /wolfwasm-bootstrap\.js/);
+    assert.match(documentText, /wasm-game-bootstrap\.js/);
     assert.doesNotMatch(documentText, /fixture<\/title>/, 'framework document must replace a downstream index');
     const bmpResponse = await fetch(`${base}/background.bmp`);
     assert.equal(bmpResponse.headers.get('content-type'), 'image/bmp');
@@ -95,7 +95,7 @@ async function waitFor(url) {
     const workerResponse = await fetch(`${base}/service-worker.js`);
     assert.equal(workerResponse.headers.get('service-worker-allowed'), '/');
     const worker = await workerResponse.text();
-    assert.match(worker, /wasm-game-shell-0\.6\.1/);
+    assert.match(worker, /wasm-game-shell-0\.7\.0/);
     assert.match(worker, /fetch\(event\.request\)/, 'shell cache must refresh from the network before using its fallback');
     assert.doesNotMatch(worker, /game-data/, 'the service worker must not duplicate owner game-data caching');
     const noVariant = await (await fetch(`${base}/game-data/status`)).json();
