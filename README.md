@@ -373,7 +373,7 @@ Projects are listed as **Live** when a public deployment is available and
 | id Tech 4 | Quake 4 | **Still in development** | [quake4-wasm](https://github.com/theodorecharles/quake4-wasm); canonical `idtech4-wasm` family repository is being prepared |
 | Build | Blood | **Still in development** | [blood-wasm](https://github.com/theodorecharles/blood-wasm); canonical `build-wasm` family repository is planned |
 | Build | Duke Nukem 3D | **Still in development** | Canonical `build-wasm` family repository is planned |
-| GoldSource | Half-Life, Opposing Force, Blue Shift, Counter-Strike | **Still in development** | Canonical `goldsource-wasm` family repository is being prepared |
+| GoldSource | Half-Life, Opposing Force, Blue Shift, Counter-Strike | **Still in development** | [goldsource-wasm](https://github.com/theodorecharles/goldsource-wasm) |
 | Source | Half-Life 2, Counter-Strike: Source | **Still in development** | Canonical `source-wasm` family repository is planned |
 | Wolf3D | Wolfenstein 3D, Spear of Destiny | **Still in development** | Canonical `wolf3d-wasm` repository is being prepared |
 | DOSBox | Jill of the Jungle and future DOS titles | **Still in development** | Canonical `dosbox-wasm` repository is planned |
