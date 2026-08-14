@@ -365,7 +365,7 @@ Projects are listed as **Live** when a public deployment is available and
 | Engine family | Games | Status | Current repositories |
 | --- | --- | --- | --- |
 | id Tech 1 | Doom, Doom II, TNT, Plutonia, Heretic, Hexen, Strife, Chex Quest | **Still in development** | [idtech1-wasm](https://github.com/theodorecharles/idtech1-wasm) |
-| id Tech 2 | Quake, Quake II | **Still in development** | [quake1-wasm](https://github.com/theodorecharles/quake1-wasm), [quake2-wasm](https://github.com/theodorecharles/quake2-wasm); canonical `idtech2-wasm` family repository is planned |
+| id Tech 2 | Quake, Quake II | **Still in development** | [idtech2-wasm](https://github.com/theodorecharles/idtech2-wasm) |
 | id Tech 3 | Quake III Arena | **Still in development** | [quake3-wasm](https://github.com/theodorecharles/quake3-wasm) |
 | id Tech 3 | Return to Castle Wolfenstein | **Still in development** | [rtcw-wasm](https://github.com/theodorecharles/rtcw-wasm) |
 | id Tech 3 | Wolfenstein: Enemy Territory | **Live** | [wolfet-wasm](https://github.com/theodorecharles/wolfet-wasm), [live deployment](https://wolfet.tedcharles.net/) |
