@@ -1,0 +1,14 @@
+{
+  "namespace": "framework-fixture",
+  "version": "fixture-v1",
+  "files": [
+    {
+      "key": "pak0",
+      "name": "pak0.pak",
+      "path": "id1/pak0.pak",
+      "size": 15,
+      "magic": "PACK",
+      "sha256": "3afb114887c9b5ad3c6cb23b8c5917bdab40e573b691c5ae31bacd8bf9b5f796"
+    }
+  ]
+}
