@@ -375,7 +375,7 @@ Projects are listed as **Live** when a public deployment is available and
 | Build | Duke Nukem 3D | **Still in development** | Canonical `build-wasm` family repository is planned |
 | GoldSource | Half-Life, Opposing Force, Blue Shift, Counter-Strike | **Still in development** | [goldsource-wasm](https://github.com/theodorecharles/goldsource-wasm) |
 | Source | Half-Life 2, Counter-Strike: Source | **Still in development** | Canonical `source-wasm` family repository is planned |
-| Wolf3D | Wolfenstein 3D, Spear of Destiny | **Still in development** | Canonical `wolf3d-wasm` repository is being prepared |
+| Wolf3D | Wolfenstein 3D, Spear of Destiny | **Still in development** | [wolf3d-wasm](https://github.com/theodorecharles/wolf3d-wasm) |
 | DOSBox | Jill of the Jungle and future DOS titles | **Still in development** | Canonical `dosbox-wasm` repository is planned |
 | Standalone | Call of Duty 2 | **Still in development** | Canonical `cod2-wasm` repository is being prepared |
 
