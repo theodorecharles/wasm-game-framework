@@ -13,36 +13,6 @@ uses the framework's launcher, persistent game-data provisioning, browser
 cache, responsive canvas, input-capture lifecycle, graphics profiles,
 fullscreen launch, and idle dedicated-server wakeup.
 
-## Projects and release status
-
-Projects are listed as **Live** when a public deployment is available and
-**Still in development** while work continues toward a release.
-
-| Engine family | Games | Status | Current repositories |
-| --- | --- | --- | --- |
-| id Tech 1 | Doom, Doom II, TNT, Plutonia, Heretic, Hexen, Strife, Chex Quest | **Still in development** | Canonical `idtech1-wasm` family repository is being prepared |
-| id Tech 2 | Quake, Quake II | **Still in development** | [quake1-wasm](https://github.com/theodorecharles/quake1-wasm), [quake2-wasm](https://github.com/theodorecharles/quake2-wasm); canonical `idtech2-wasm` family repository is planned |
-| id Tech 3 | Quake III Arena | **Still in development** | [quake3-wasm](https://github.com/theodorecharles/quake3-wasm) |
-| id Tech 3 | Return to Castle Wolfenstein | **Still in development** | [rtcw-wasm](https://github.com/theodorecharles/rtcw-wasm) |
-| id Tech 3 | Wolfenstein: Enemy Territory | **Live** | [wolfet-wasm](https://github.com/theodorecharles/wolfet-wasm), [live deployment](https://wolfet.tedcharles.net/) |
-| id Tech 4 | Doom 3, Resurrection of Evil | **Still in development** | [doom3-wasm](https://github.com/theodorecharles/doom3-wasm); canonical `idtech4-wasm` family repository is being prepared |
-| id Tech 4 | Quake 4 | **Still in development** | [quake4-wasm](https://github.com/theodorecharles/quake4-wasm); canonical `idtech4-wasm` family repository is being prepared |
-| Build | Blood | **Still in development** | [blood-wasm](https://github.com/theodorecharles/blood-wasm); canonical `build-wasm` family repository is planned |
-| Build | Duke Nukem 3D | **Still in development** | Canonical `build-wasm` family repository is planned |
-| GoldSource | Half-Life, Opposing Force, Blue Shift, Counter-Strike | **Still in development** | Canonical `goldsource-wasm` family repository is being prepared |
-| Source | Half-Life 2, Counter-Strike: Source | **Still in development** | Canonical `source-wasm` family repository is planned |
-| Wolf3D | Wolfenstein 3D, Spear of Destiny | **Still in development** | Canonical `wolf3d-wasm` repository is being prepared |
-| DOSBox | Jill of the Jungle and future DOS titles | **Still in development** | Canonical `dosbox-wasm` repository is planned |
-| Standalone | Call of Duty 2 | **Still in development** | Canonical `cod2-wasm` repository is being prepared |
-
-The intended public shape is one repository per reusable engine family, not
-one repository per executable and not one monorepo for unrelated engines. A
-family repository owns shared native/Emscripten adaptations and can emit both
-a suite image and independently branded game images. Existing per-game
-repositories remain available until the corresponding family repository
-reaches feature parity; they will then be archived with a clear “moved to”
-link rather than deleted.
-
 ## Quick start
 
 The framework repository is self-contained. It does not include a game engine,
@@ -386,3 +356,33 @@ Docker smoke tests should additionally verify that `/data` is never publicly
 served and that the image reports the exact framework package version.
 
 Never submit framework or downstream engine changes to any upstream project.
+
+## Projects and release status
+
+Projects are listed as **Live** when a public deployment is available and
+**Still in development** while work continues toward a release.
+
+| Engine family | Games | Status | Current repositories |
+| --- | --- | --- | --- |
+| id Tech 1 | Doom, Doom II, TNT, Plutonia, Heretic, Hexen, Strife, Chex Quest | **Still in development** | Canonical `idtech1-wasm` family repository is being prepared |
+| id Tech 2 | Quake, Quake II | **Still in development** | [quake1-wasm](https://github.com/theodorecharles/quake1-wasm), [quake2-wasm](https://github.com/theodorecharles/quake2-wasm); canonical `idtech2-wasm` family repository is planned |
+| id Tech 3 | Quake III Arena | **Still in development** | [quake3-wasm](https://github.com/theodorecharles/quake3-wasm) |
+| id Tech 3 | Return to Castle Wolfenstein | **Still in development** | [rtcw-wasm](https://github.com/theodorecharles/rtcw-wasm) |
+| id Tech 3 | Wolfenstein: Enemy Territory | **Live** | [wolfet-wasm](https://github.com/theodorecharles/wolfet-wasm), [live deployment](https://wolfet.tedcharles.net/) |
+| id Tech 4 | Doom 3, Resurrection of Evil | **Still in development** | [doom3-wasm](https://github.com/theodorecharles/doom3-wasm); canonical `idtech4-wasm` family repository is being prepared |
+| id Tech 4 | Quake 4 | **Still in development** | [quake4-wasm](https://github.com/theodorecharles/quake4-wasm); canonical `idtech4-wasm` family repository is being prepared |
+| Build | Blood | **Still in development** | [blood-wasm](https://github.com/theodorecharles/blood-wasm); canonical `build-wasm` family repository is planned |
+| Build | Duke Nukem 3D | **Still in development** | Canonical `build-wasm` family repository is planned |
+| GoldSource | Half-Life, Opposing Force, Blue Shift, Counter-Strike | **Still in development** | Canonical `goldsource-wasm` family repository is being prepared |
+| Source | Half-Life 2, Counter-Strike: Source | **Still in development** | Canonical `source-wasm` family repository is planned |
+| Wolf3D | Wolfenstein 3D, Spear of Destiny | **Still in development** | Canonical `wolf3d-wasm` repository is being prepared |
+| DOSBox | Jill of the Jungle and future DOS titles | **Still in development** | Canonical `dosbox-wasm` repository is planned |
+| Standalone | Call of Duty 2 | **Still in development** | Canonical `cod2-wasm` repository is being prepared |
+
+The intended public shape is one repository per reusable engine family, not
+one repository per executable and not one monorepo for unrelated engines. A
+family repository owns shared native/Emscripten adaptations and can emit both
+a suite image and independently branded game images. Existing per-game
+repositories remain available until the corresponding family repository
+reaches feature parity; they will then be archived with a clear “moved to”
+link rather than deleted.
