@@ -15,15 +15,8 @@ fullscreen launch, and idle dedicated-server wakeup.
 
 ## Projects and release status
 
-This portfolio deliberately uses only two public release labels:
-
-- **Live** means the game has a deployed release that has been manually
-  verified through its supported browser flow.
-- **Still in development** means everything else, including projects that
-  already compile, render, or pass local smoke tests.
-
-There are no “partially working” or “mostly working” labels. A local milestone
-is useful engineering evidence, but it is not a public release.
+Projects are listed as **Live** when a public deployment is available and
+**Still in development** while work continues toward a release.
 
 | Engine family | Games | Status | Current repositories |
 | --- | --- | --- | --- |
