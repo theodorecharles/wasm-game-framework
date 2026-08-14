@@ -373,8 +373,8 @@ Projects are listed as **Live** when a public deployment is available and
 | id Tech 3 | Quake III Arena | **Still in development** | [quake3-wasm](https://github.com/theodorecharles/quake3-wasm) |
 | id Tech 3 | Return to Castle Wolfenstein | **Still in development** | [rtcw-wasm](https://github.com/theodorecharles/rtcw-wasm) |
 | id Tech 3 | Wolfenstein: Enemy Territory | **Live** | [wolfet-wasm](https://github.com/theodorecharles/wolfet-wasm), [live deployment](https://wolfet.tedcharles.net/) |
-| id Tech 4 | Doom 3, Resurrection of Evil | **Still in development** | [doom3-wasm](https://github.com/theodorecharles/doom3-wasm); canonical `idtech4-wasm` family repository is being prepared |
-| id Tech 4 | Quake 4 | **Still in development** | [quake4-wasm](https://github.com/theodorecharles/quake4-wasm); canonical `idtech4-wasm` family repository is being prepared |
+| id Tech 4 | Doom 3, Resurrection of Evil | **Still in development** | [idtech4-wasm](https://github.com/theodorecharles/idtech4-wasm), [doom3-wasm](https://github.com/theodorecharles/doom3-wasm) |
+| id Tech 4 | Quake 4 | **Still in development** | [idtech4-wasm](https://github.com/theodorecharles/idtech4-wasm), [quake4-wasm](https://github.com/theodorecharles/quake4-wasm) |
 | Build | Blood | **Still in development** | [blood-wasm](https://github.com/theodorecharles/blood-wasm); canonical `build-wasm` family repository is planned |
 | Build | Duke Nukem 3D | **Still in development** | Canonical `build-wasm` family repository is planned |
 | GoldSource | Half-Life, Opposing Force, Blue Shift, Counter-Strike | **Still in development** | [goldsource-wasm](https://github.com/theodorecharles/goldsource-wasm) |
