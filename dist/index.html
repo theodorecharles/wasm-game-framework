@@ -28,11 +28,24 @@
         <button id="choose-files" type="button">Choose game files</button>
         <input id="game-files" type="file" multiple hidden>
         <input id="game-directory" type="file" webkitdirectory multiple hidden>
-        <label id="setup-token-row" data-shell-setup-token-field hidden>
-          Setup token
-          <input id="setup-token" data-shell-setup-token type="password" autocomplete="off">
-        </label>
       </section>
+
+      <section id="media-library" data-shell-media-library hidden>
+        <label>
+          Media
+          <select id="media-entry" data-shell-media-entry></select>
+        </label>
+        <button id="add-media-directory" type="button">Add media folder</button>
+        <button id="add-media-files" type="button">Add media files</button>
+        <input id="media-files" type="file" multiple hidden>
+        <input id="media-directory" type="file" webkitdirectory multiple hidden>
+        <p id="media-status" data-shell-media-status role="status"></p>
+      </section>
+
+      <label id="setup-token-row" data-shell-setup-token-field hidden>
+        Setup token
+        <input id="setup-token" data-shell-setup-token type="password" autocomplete="off">
+      </label>
 
       <label id="password-row" data-shell-password hidden>
         Game password

@@ -22,4 +22,28 @@ export async function validateFixture({ size, policy, read, digest }) {
   };
 }
 
+export async function validateMediaFixture({ files, totalSize, policy, file }) {
+  if (policy.throwMessage) throw new Error(String(policy.throwMessage));
+  const required = Array.from(policy.requiredFiles || []);
+  const missing = required.find(name => !file(name));
+  if (missing) return { accepted: false, error: `missing referenced file ${missing}` };
+  const primary = String(policy.primary || files[0]?.name || '');
+  const selected = file(primary);
+  if (!selected) return { accepted: false, error: `missing primary file ${primary}` };
+  const signature = String(policy.signature || 'MEDIA');
+  const header = text(await selected.read(0, Number(policy.readBytes || signature.length)));
+  if (header.slice(0, signature.length) !== signature) {
+    return { accepted: false, error: `expected ${signature} signature` };
+  }
+  if (policy.secondRead) await selected.read(0, signature.length);
+  return {
+    accepted: true,
+    label: policy.label || 'Fixture media',
+    primary,
+    identity: policy.identity || 'fixture-media',
+    version: policy.contentVersion || '1',
+    metadata: { kind: policy.kind || 'fixture', totalSize, files: files.length }
+  };
+}
+
 export default validateFixture;

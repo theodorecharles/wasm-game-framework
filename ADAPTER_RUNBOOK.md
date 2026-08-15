@@ -357,6 +357,34 @@ defaults may be overridden per file; set `validator: false` for files that use
 only filename/size/magic/hash checks. Bump the validator version whenever its
 semantics change.
 
+For a variable media collection, declare `mediaLibrary` instead of encoding
+titles as fixed files. The same downstream module exports a bundle validator
+receiving `{ files, totalSize, policy, file(name) }`. Each file exposes only
+`{ name, size, read, digest }`. Return the normal validation fields plus an
+optional display `label` and relative `primary` filename. Validate every
+descriptor/reference against the complete set so descriptor-plus-track and
+other multi-file inputs are accepted or rejected atomically. The framework is
+format-neutral and must not parse extensions, disc descriptors, cartridges, or
+archives.
+
+Before native startup, load only the selected entry:
+
+```js
+const selected = await context.dataClient.media.load(undefined, {
+  onProgress: updateLoadingProgress
+});
+for (const item of selected.entries) {
+  mountReadOnly(item.file, item.mountName);
+}
+startNativeMain(selected.primary);
+```
+
+Treat `MEDIA_SELECTION_REQUIRED` as a launcher state. Treat
+`MEDIA_RANDOM_ACCESS_REQUIRED` as a fail-closed adapter milestone: implement a
+reviewed range-backed native filesystem before enabling media above the browser
+cache envelope. Do not pretend that a runtime capable only of whole-file MEMFS
+loading supports multi-gigabyte media.
+
 Every manifest explicitly declares `persistence: false` or a persistence
 object with an absolute traversal-free `root`. Omitted persistence policy is a
 package error. `false` is reserved for a runtime that genuinely has no writable
@@ -377,6 +405,15 @@ const persistent = await context.persistence.attach(module.FS, {
 });
 module.callMain(nativeArgumentsUsing(persistent.root));
 ```
+
+If the native filesystem and main function live in an Emscripten worker, the
+main thread must pass only the resolved `namespace`, `root`, and the exact
+framework script URL. The worker imports that script, creates its own
+`createPersistenceManager({ namespace, root })`, awaits
+`manager.attach(Module.FS)`/the initial `syncfs(true)`, and only then enters
+native main. All dirty notifications and flushes use that same worker-local
+manager. A main-thread manager cannot attach to a worker-only `FS`, and copying
+the persistence implementation into an adapter breaks the versioned contract.
 
 For an engine whose Emscripten FS exists in a dedicated worker, post the
 resolved `context.persistence.namespace` and `.root` to that worker. Import

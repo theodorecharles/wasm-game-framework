@@ -6,7 +6,7 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.8.0**
+Current release: **0.9.0**
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -22,7 +22,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.8.0
+./scripts/build-base-image.sh wasm-game-framework:0.9.0
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -43,6 +43,15 @@ Mount a persistent `/data` volume when running that image. On first use, the
 administrator uploads the exact files allowed by
 `wasm-game-data.json`; subsequent visitors see the normal launcher, and each
 browser keeps a validated private IndexedDB cache for fast reloads.
+
+Version 0.9 adds a generic private media library alongside the original fixed-
+file contract. A deployment may accept zero or more named entries, where an
+entry is one file or an atomic multi-file bundle. The framework handles bounded
+upload sessions, atomic installation, safe metadata lists, selection, and a
+selected-entry-only browser cache. A downstream pure `.mjs` validator owns all
+format knowledge and executes unchanged in Node and the browser. Existing
+`files`, `status()`, `provision()`, `load()`, and `applyGate()` APIs remain
+compatible.
 
 The enforced dependency direction is documented in [ARCHITECTURE.md](ARCHITECTURE.md):
 framework behavior flows into an engine-family adapter, then into a small game
@@ -140,6 +149,41 @@ globalThis.WasmGameAdapter = {
   captureLost(detail, context) {}
 };
 ```
+
+A media-library declaration is format-neutral:
+
+```json
+{
+  "namespace": "console-suite",
+  "version": "media-v1",
+  "files": [],
+  "mediaLibrary": {
+    "minimumEntries": 1,
+    "maxFilesPerEntry": 64,
+    "maxFileBytes": 2147483648,
+    "maxEntryBytes": 4294967296,
+    "maxBrowserCacheBytes": 2147483648,
+    "publicMetadata": ["system", "region"],
+    "validator": {
+      "module": "/data-validator.mjs",
+      "export": "validateMediaBundle",
+      "version": "console-media-v1",
+      "policy": { "system": "example" },
+      "maxReadBytes": 1048576,
+      "maxTotalReadBytes": 8388608
+    }
+  }
+}
+```
+
+The shared browser client exposes `dataClient.media.status()`, `selected()`,
+`select(id, library)`, `upload(files, options)`, `detail(id)`, and
+`load(id?, options)`. `load()` downloads and validates only the selected entry,
+returns its relative mount names and primary file, and clears the prior
+selection's versioned cache. If an entry exceeds `maxBrowserCacheBytes`, it
+fails with `MEDIA_RANDOM_ACCESS_REQUIRED`; a downstream streaming/random-access
+adapter is required rather than silently materializing an unsafe amount of
+memory.
 
 The adapter owns native engine seams and validation policy. The framework owns
 all launcher, provisioning, loading, preference, canvas, mobile notice, and

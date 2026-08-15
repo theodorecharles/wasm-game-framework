@@ -1294,6 +1294,110 @@
     });
   }
 
+  function normalizeMediaRelativeName(value) {
+    const name = String(value || '').replace(/\\/g, '/');
+    if (!name || name.length > 1024 || name.startsWith('/') || /^[A-Za-z]:/.test(name) || /[\u0000-\u001f\u007f]/.test(name)) {
+      throw new Error(`Invalid media-bundle path: ${value}`);
+    }
+    const segments = name.split('/');
+    if (segments.some(segment => !segment || segment.length > 255 || segment === '.' || segment === '..')) {
+      throw new Error(`Invalid media-bundle path: ${value}`);
+    }
+    return segments.join('/');
+  }
+
+  function normalizeMediaBundleValidatorResult(value, fileNames) {
+    const result = normalizeDataValidatorResult(value);
+    const label = validationText(value && value.label, 'media label', 256);
+    let primary = null;
+    if (value && value.primary !== undefined && value.primary !== null && value.primary !== '') {
+      primary = normalizeMediaRelativeName(value.primary);
+      if (!fileNames.has(primary)) throw new Error(`Data-validator primary media file is not in the bundle: ${primary}`);
+    }
+    return Object.freeze({ ...result, label, primary });
+  }
+
+  async function runMediaBundleValidator(sources, declaration, options) {
+    const rule = normalizeDataValidatorDeclaration(declaration);
+    if (!rule) throw new Error('A media-library validator declaration is required.');
+    const config = options || {};
+    const input = Array.from(sources || []);
+    if (!input.length) throw new Error('A media bundle must contain at least one file.');
+    const fileNames = new Set();
+    const foldedFileNames = new Set();
+    let totalSize = 0;
+    for (const source of input) {
+      const name = normalizeMediaRelativeName(source && source.name);
+      const folded = name.toLowerCase();
+      if (foldedFileNames.has(folded)) throw new Error(`Duplicate media-bundle path: ${name}`);
+      fileNames.add(name);
+      foldedFileNames.add(folded);
+      const size = Number(source && source.size);
+      if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Media-bundle file size is invalid: ${name}`);
+      totalSize += size;
+      if (!Number.isSafeInteger(totalSize)) throw new Error('Media-bundle total size is invalid.');
+    }
+
+    const loadModule = config.loadModule || loadBrowserDataValidator;
+    let module;
+    try { module = await cachedValidatorModule(loadModule, rule.module); } catch (_) {
+      throw new Error(`Data-validator module ${rule.module} could not be loaded.`);
+    }
+    const validate = module && module[rule.export];
+    if (typeof validate !== 'function') {
+      throw new Error(`Data-validator module ${rule.module} does not export ${rule.export}().`);
+    }
+
+    const sharedLimit = rule.maxTotalReadBytes === null ? totalSize : rule.maxTotalReadBytes;
+    let sharedBytesRead = 0;
+    const readers = input.map(source => {
+      const name = normalizeMediaRelativeName(source.name);
+      const reader = createBoundedDataReader(source, { ...rule, maxTotalReadBytes: null });
+      async function read(offset, length) {
+        const count = Number(length);
+        if (!Number.isSafeInteger(count) || count < 0) {
+          throw new Error('Data-validator reads require non-negative integer offsets and lengths.');
+        }
+        if (count > sharedLimit - sharedBytesRead) {
+          throw new Error(`Data-validator reads exceed the total bundle limit of ${sharedLimit} bytes.`);
+        }
+        sharedBytesRead += count;
+        try { return await reader.read(offset, count); } catch (error) {
+          sharedBytesRead -= count;
+          throw error;
+        }
+      }
+      return Object.freeze({ name, size: reader.size, read, digest: reader.digest, stats: reader.stats });
+    });
+    const publicFiles = Object.freeze(readers.map(reader => Object.freeze({
+      name: reader.name, size: reader.size, read: reader.read, digest: reader.digest
+    })));
+    const byName = new Map(publicFiles.map(file => [file.name, file]));
+    let value;
+    try {
+      value = await validate(Object.freeze({
+        files: publicFiles,
+        totalSize,
+        policy: rule.policy,
+        file(name) { return byName.get(normalizeMediaRelativeName(name)) || null; }
+      }));
+    } catch (error) {
+      const message = String(error && error.message || 'validator execution failed')
+        .replace(/[\u0000-\u001f]+/g, ' ').slice(0, 1024);
+      throw new Error(`Data validator failed: ${message || 'validator execution failed'}.`);
+    }
+    const result = normalizeMediaBundleValidatorResult(value, fileNames);
+    return Object.freeze({
+      ...result,
+      bytesRead: sharedBytesRead,
+      readCalls: readers.reduce((sum, reader) => sum + reader.stats().readCalls, 0),
+      module: rule.module,
+      export: rule.export,
+      validatorVersion: rule.version,
+      policy: rule.policy
+    });
+  }
+
   const ownerFileValidationResults = new WeakMap();
 
   function ownerFileValidation(file) {
@@ -1708,6 +1812,231 @@
       return Array.from(source || []).map(file => ({ name: String(file.webkitRelativePath || file.name), file }));
     }
 
+    function mediaSourceFiles(source) {
+      const values = sourceFiles(source).map(entry => ({
+        name: normalizeMediaRelativeName(entry.name),
+        file: entry.file
+      }));
+      if (!values.length) throw new Error('Select at least one file for the media bundle.');
+      const roots = values.map(entry => entry.name.split('/'));
+      if (roots.every(parts => parts.length > 1 && parts[0] === roots[0][0])) {
+        for (const entry of values) entry.name = entry.name.split('/').slice(1).join('/');
+      }
+      const seen = new Set();
+      for (const entry of values) {
+        entry.name = normalizeMediaRelativeName(entry.name);
+        const folded = entry.name.toLowerCase();
+        if (seen.has(folded)) throw new Error(`Duplicate media-bundle path: ${entry.name}`);
+        seen.add(folded);
+        if (!(entry.file instanceof Blob)) throw new Error(`${entry.name} is not a browser File or Blob.`);
+      }
+      return values;
+    }
+
+    function setupHeaders(extra, request) {
+      const headers = { ...(extra || {}) };
+      const token = request?.token || tokenField()?.value;
+      if (token) headers.authorization = `Bearer ${token}`;
+      return headers;
+    }
+
+    async function mediaStatus() {
+      const state = await status();
+      if (!state.mediaLibrary?.configured) {
+        const error = new Error('This container has no media-library policy.');
+        error.code = 'MEDIA_LIBRARY_UNAVAILABLE';
+        throw error;
+      }
+      return state.mediaLibrary;
+    }
+
+    function mediaSelectionKey(library) {
+      return `wasm-game-media-selection:${library.namespace}:${variant || 'default'}`;
+    }
+
+    function selectedMedia(library) {
+      let selected = '';
+      try { selected = String(localStorage.getItem(mediaSelectionKey(library)) || ''); } catch (_) {}
+      if (!library.entries.some(entry => entry.id === selected)) selected = library.entries[0]?.id || '';
+      return selected;
+    }
+
+    function selectMedia(entryId, library) {
+      const state = library || null;
+      const id = String(entryId || '');
+      if (state && !state.entries.some(entry => entry.id === id)) throw new Error('Unknown media entry.');
+      if (state) try { localStorage.setItem(mediaSelectionKey(state), id); } catch (_) {}
+      return id;
+    }
+
+    async function uploadMedia(source, uploadOptions) {
+      const request = uploadOptions || {};
+      const library = await mediaStatus();
+      const values = mediaSourceFiles(source);
+      const label = String(request.label || '').trim();
+      const begin = await fetch(endpoint('/media/uploads'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: setupHeaders({ 'content-type': 'application/json' }, request),
+        body: JSON.stringify({
+          ...(label ? { label } : {}),
+          files: values.map(entry => ({ name: entry.name, size: entry.file.size }))
+        })
+      });
+      if (!begin.ok) {
+        const body = await readJson(begin, {});
+        throw new Error(body.error || `Starting media upload failed with HTTP ${begin.status}.`);
+      }
+      const session = await begin.json();
+      try {
+        for (let index = 0; index < session.files.length; index += 1) {
+          const descriptor = session.files[index];
+          const local = values.find(entry => entry.name === descriptor.name);
+          if (!local) throw new Error(`Media upload session requested an unknown file: ${descriptor.name}`);
+          request.onProgress?.({
+            phase: 'uploading-media', name: descriptor.name, index, total: session.files.length,
+            bytes: local.file.size
+          });
+          const response = await fetch(endpoint(`/media/uploads/${session.id}/files/${descriptor.id}`), {
+            method: 'PUT', credentials: 'same-origin', headers: setupHeaders({}, request), body: local.file
+          });
+          if (!response.ok) {
+            const body = await readJson(response, {});
+            throw new Error(body.error || `Uploading ${descriptor.name} failed with HTTP ${response.status}.`);
+          }
+          request.onProgress?.({
+            phase: 'uploaded-media', name: descriptor.name, index, total: session.files.length,
+            bytes: local.file.size
+          });
+        }
+        const committed = await fetch(endpoint(`/media/uploads/${session.id}/commit`), {
+          method: 'POST', credentials: 'same-origin', headers: setupHeaders({}, request)
+        });
+        if (!committed.ok) {
+          const body = await readJson(committed, {});
+          throw new Error(body.error || `Committing media bundle failed with HTTP ${committed.status}.`);
+        }
+        const entry = Object.freeze(await committed.json());
+        const refreshed = await mediaStatus();
+        selectMedia(entry.id, refreshed);
+        return Object.freeze({ entry, library: refreshed });
+      } catch (error) {
+        await fetch(endpoint(`/media/uploads/${session.id}`), {
+          method: 'DELETE', credentials: 'same-origin', headers: setupHeaders({}, request)
+        }).catch(() => undefined);
+        throw error;
+      }
+    }
+
+    async function mediaDetail(entryId) {
+      const id = String(entryId || '');
+      const response = await fetch(endpoint(`/media/entries/${encodeURIComponent(id)}`), {
+        cache: 'no-store', credentials: 'same-origin'
+      });
+      if (!response.ok) {
+        const body = await readJson(response, {});
+        throw new Error(body.error || `Loading media metadata failed with HTTP ${response.status}.`);
+      }
+      return Object.freeze(await response.json());
+    }
+
+    function namedMediaBlob(blob, name) {
+      if (typeof File === 'function') return new File([blob], name, { type: blob.type });
+      const value = blob.slice(0, blob.size, blob.type);
+      Object.defineProperty(value, 'name', { value: name });
+      return value;
+    }
+
+    async function downloadMediaFile(entryId, descriptor, request) {
+      const response = await fetch(endpoint(`/media/entries/${entryId}/files/${descriptor.id}`), {
+        cache: 'no-store', credentials: 'same-origin'
+      });
+      if (!response.ok) throw new Error(`Downloading ${descriptor.name} failed with HTTP ${response.status}.`);
+      const total = Number(response.headers.get('content-length')) || descriptor.size;
+      let blob;
+      if (response.body && typeof response.body.getReader === 'function') {
+        const reader = response.body.getReader();
+        const chunks = [];
+        let received = 0;
+        while (true) {
+          const part = await reader.read();
+          if (part.done) break;
+          chunks.push(part.value);
+          received += part.value.byteLength;
+          request.onProgress?.({ phase: 'downloading-media', name: descriptor.name, received, total });
+        }
+        blob = new Blob(chunks, { type: response.headers.get('content-type') || '' });
+      } else blob = await response.blob();
+      if (blob.size !== descriptor.size) throw new Error(`${descriptor.name} was truncated during download.`);
+      return namedMediaBlob(blob, descriptor.name);
+    }
+
+    async function loadMedia(entryId, loadOptions) {
+      const request = loadOptions || {};
+      const library = await mediaStatus();
+      const id = String(entryId || selectedMedia(library));
+      if (!id || !library.entries.some(entry => entry.id === id)) {
+        const error = new Error('Select a media entry before starting.');
+        error.code = 'MEDIA_SELECTION_REQUIRED';
+        throw error;
+      }
+      const detail = await mediaDetail(id);
+      if (detail.totalSize > Number(library.limits.maxBrowserCacheBytes)) {
+        const error = new Error('The selected media exceeds this deployment’s browser-cache limit.');
+        error.code = 'MEDIA_RANDOM_ACCESS_REQUIRED';
+        error.entry = detail;
+        throw error;
+      }
+      const cache = createDataCache({
+        namespace: library.namespace,
+        version: `${detail.cacheVersion}:validator:${dataValidatorCacheTag(detail.validator)}`
+      });
+      const marker = await cache.get('_selected');
+      if (!marker || marker.metadata.entryId !== id) {
+        await cache.clear();
+        await cache.put('_selected', new Blob([]), { entryId: id });
+      }
+      const entries = [];
+      try {
+        for (let index = 0; index < detail.files.length; index += 1) {
+          const descriptor = detail.files[index];
+          const validate = file => {
+            if (!(file instanceof Blob) || file.size !== descriptor.size || String(file.name || '') !== descriptor.name) {
+              throw new Error(`Cached media file is invalid: ${descriptor.name}`);
+            }
+          };
+          const entry = await cache.getOrLoad({
+            key: descriptor.id,
+            load: () => downloadMediaFile(id, descriptor, request),
+            validate,
+            validateCached: validate,
+            metadata: { entryId: id, mediaFileId: descriptor.id, mountName: descriptor.name }
+          });
+          entries.push(Object.freeze({ ...entry, mountName: descriptor.name, descriptor }));
+          request.onProgress?.({
+            phase: entry.cached ? 'restored-media' : 'cached-media', name: descriptor.name,
+            index, total: detail.files.length, bytes: descriptor.size
+          });
+        }
+        const validation = await runMediaBundleValidator(
+          entries.map(entry => entry.file), detail.validator, request.validationOptions
+        );
+        if (!validation.accepted) throw new Error(validation.error);
+        await cache.persist();
+        selectMedia(id, library);
+        return Object.freeze({
+          entry: detail,
+          primary: validation.primary || detail.primary,
+          validation,
+          cache,
+          entries: Object.freeze(entries)
+        });
+      } catch (error) {
+        await cache.clear();
+        throw error;
+      }
+    }
+
     async function selectSource(source, values, policy) {
       if (source && typeof source.getFileHandle === 'function') {
         for (const name of policy.names || [policy.name]) {
@@ -1807,19 +2136,35 @@
 
     async function applyGate(gateOptions) {
       const request = gateOptions || {};
-      const state = await status();
+      let state = await status();
+      if (state.mediaLibrary?.configured) {
+        const selectedId = selectedMedia(state.mediaLibrary);
+        state = Object.freeze({
+          ...state,
+          mediaLibrary: Object.freeze({ ...state.mediaLibrary, selectedId })
+        });
+      }
       const provisioning = Array.from(document.querySelectorAll(request.provisioning || '[data-shell-provisioning]'));
       const ready = Array.from(document.querySelectorAll(request.ready || '[data-shell-data-ready]'));
       const token = Array.from(document.querySelectorAll(request.setupToken || '[data-shell-setup-token-field]'));
-      provisioning.forEach(node => { node.hidden = state.ready; });
+      const fixedReady = state.mediaLibrary ? state.fixedReady : state.ready;
+      provisioning.forEach(node => { node.hidden = fixedReady; });
       ready.forEach(node => { node.hidden = !state.ready; });
-      token.forEach(node => { node.hidden = state.ready || !state.setupTokenRequired; });
+      token.forEach(node => { node.hidden = (fixedReady && !state.mediaLibrary) || !state.setupTokenRequired; });
       document.documentElement.dataset.shellDataReady = String(state.ready);
       window.dispatchEvent(new CustomEvent('wasm-game-framework-data-status', { detail: state }));
       return state;
     }
 
-    return Object.freeze({ baseUrl, variant, status, provision, load, applyGate });
+    const media = Object.freeze({
+      status: mediaStatus,
+      selected: selectedMedia,
+      select: selectMedia,
+      upload: uploadMedia,
+      detail: mediaDetail,
+      load: loadMedia
+    });
+    return Object.freeze({ baseUrl, variant, status, provision, load, media, applyGate });
   }
 
   function configure(options) {
@@ -2313,7 +2658,7 @@
   }
 
   const api = Object.freeze({
-    version: '0.8.0',
+    version: '0.9.0',
     DISPLAY_MODES,
     ENGINE_STATES,
     CONTROLLER_MODES,
@@ -2340,6 +2685,8 @@
     dataValidatorCacheTag,
     createBoundedDataReader,
     runDataValidator,
+    runMediaBundleValidator,
+    normalizeMediaRelativeName,
     validateOwnerFile,
     ownerFileValidation,
     mountOwnerFiles,

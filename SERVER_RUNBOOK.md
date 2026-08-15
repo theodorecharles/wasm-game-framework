@@ -9,6 +9,16 @@ Use this with [ADAPTER_RUNBOOK.md](ADAPTER_RUNBOOK.md). The adapter runbook owns
 browser/engine state. This runbook owns the separate server process, readiness,
 population, transport, bots, and recovery.
 
+For deployments that also expose a variable private media collection, use the
+framework 0.9 media-library routes rather than adding title-specific upload
+endpoints. `POST /game-data/media/uploads` creates a bounded session, each
+declared file is sent to its opaque upload-file route, and `POST .../commit`
+validates and atomically publishes the whole bundle. Mutations use the existing
+setup-token and password boundaries. Public lists contain opaque IDs, labels,
+counts, sizes, timestamps, and explicitly allowlisted scalar metadata—never
+host paths or raw filenames. Entry details and immutable range-capable file
+routes remain password-gated with the rest of `/game-data`.
+
 ## 1. Define the process boundary
 
 Keep these responsibilities separate:

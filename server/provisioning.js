@@ -10,6 +10,7 @@ const {
   normalizeDataValidatorDeclaration,
   runDataValidator
 } = require('../dist/wasm-game-framework.js');
+const { normalizeMediaLibrary } = require('./media-library');
 
 function safeKey(value) {
   const key = String(value || '').toLowerCase();
@@ -45,8 +46,28 @@ function mergeValidator(base, override) {
   return normalizeDataValidatorDeclaration(merged);
 }
 
+function mergeMediaLibrary(base, override) {
+  if (override === false) return false;
+  if (override === undefined) return base;
+  if (!base) return override;
+  const local = override && typeof override === 'object' ? override : {};
+  const baseValidator = base.validator && typeof base.validator === 'object' ? base.validator : {};
+  const localValidator = local.validator && typeof local.validator === 'object' ? local.validator : {};
+  return {
+    ...base,
+    ...local,
+    validator: {
+      ...baseValidator,
+      ...localValidator,
+      policy: { ...(baseValidator.policy || {}), ...(localValidator.policy || {}) }
+    }
+  };
+}
+
 function normalizeManifest(input) {
   const manifest = input || {};
+  const namespace = safeKey(manifest.namespace || 'game');
+  const version = String(manifest.version || '1');
   const manifestValidator = manifest.validator ? normalizeDataValidatorDeclaration(manifest.validator) : null;
   const files = (manifest.files || []).map((entry, index) => {
     const key = safeKey(entry.key || entry.name || `file-${index}`);
@@ -72,11 +93,13 @@ function normalizeManifest(input) {
       required: entry.required !== false
     });
   });
-  if (!files.length) throw new Error('A game-data manifest must contain at least one file.');
+  const mediaLibrary = normalizeMediaLibrary(manifest.mediaLibrary, { namespace, version });
+  if (!files.length && !mediaLibrary) throw new Error('A game-data manifest must contain a fixed file or media library.');
   return Object.freeze({
-    namespace: safeKey(manifest.namespace || 'game'),
-    version: String(manifest.version || '1'),
-    files: Object.freeze(files)
+    namespace,
+    version,
+    files: Object.freeze(files),
+    mediaLibrary
   });
 }
 
@@ -95,7 +118,8 @@ function normalizeManifestCollection(input) {
       ...definition,
       namespace: definition.namespace || `${rootNamespace}-${key}`,
       version: definition.version || rootVersion,
-      validator: definition.validator === undefined ? manifest.validator : definition.validator
+      validator: definition.validator === undefined ? manifest.validator : definition.validator,
+      mediaLibrary: mergeMediaLibrary(manifest.mediaLibrary, definition.mediaLibrary)
     }));
   }
   if (!variants.size) throw new Error('A suite game-data manifest must contain at least one variant.');

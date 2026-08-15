@@ -6,6 +6,7 @@ const fsp = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
 const { createProvisioningStore, normalizeManifestCollection } = require('./provisioning');
+const { createMediaLibraryStore } = require('./media-library');
 const { createPasswordGate } = require('./password-auth');
 const frameworkPackage = require('../package.json');
 
@@ -28,11 +29,26 @@ try {
 let stores = new Map();
 try {
   const manifests = normalizeManifestCollection(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
-  stores = new Map(Array.from(manifests, ([key, manifest]) => [key, createProvisioningStore({
-    dataRoot, manifest, validatorRoot: siteRoot
+  stores = new Map(Array.from(manifests, ([key, manifest]) => [key, Object.freeze({
+    fixed: createProvisioningStore({ dataRoot, manifest, validatorRoot: siteRoot }),
+    media: manifest.mediaLibrary ? createMediaLibraryStore({
+      dataRoot, manifest: manifest.mediaLibrary, validatorRoot: siteRoot
+    }) : null
   })]));
 } catch (error) {
   if (error.code !== 'ENOENT') throw error;
+}
+
+async function deploymentStatus(deployment) {
+  const fixed = await deployment.fixed.status();
+  if (!deployment.media) return fixed;
+  const mediaLibrary = await deployment.media.status();
+  return Object.freeze({
+    ...fixed,
+    fixedReady: fixed.ready,
+    ready: fixed.ready && mediaLibrary.ready,
+    mediaLibrary
+  });
 }
 
 function selectedStore(url) {
@@ -131,6 +147,19 @@ function authorized(request) {
     request.headers['x-wasm-setup-token'] === setupToken;
 }
 
+async function readJsonBody(request, maximum) {
+  const chunks = [];
+  let received = 0;
+  for await (const chunk of request) {
+    received += chunk.length;
+    if (received > maximum) { const error = new Error('Request body is too large.'); error.statusCode = 413; throw error; }
+    chunks.push(chunk);
+  }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch (_) {
+    const error = new Error('Request body must be valid JSON.'); error.statusCode = 400; throw error;
+  }
+}
+
 function safeStaticPath(root, pathname) {
   let decoded;
   try { decoded = decodeURIComponent(pathname); } catch (_) { return null; }
@@ -191,7 +220,7 @@ const server = http.createServer(async (request, response) => {
         });
       }
       return json(response, 200, selected.store ? {
-        ...(await selected.store.status()), variant: selected.key,
+        ...(await deploymentStatus(selected.store)), variant: selected.key,
         variants: Array.from(stores.keys()), setupTokenRequired: Boolean(setupToken)
       } : { configured: false, ready: true, files: [], setupTokenRequired: false });
     }
@@ -200,7 +229,7 @@ const server = http.createServer(async (request, response) => {
       const { store } = selectedStore(url);
       if (!store) return json(response, 404, { error: 'No game-data policy is installed.' });
       if (!authorized(request)) return json(response, 401, { error: 'The setup token is required.' });
-      const result = await store.acceptUpload(setup[1], request);
+      const result = await store.fixed.acceptUpload(setup[1], request);
       return json(response, 201, {
         ok: true, key: setup[1], size: result.size,
         ...(result.validation ? { validation: result.validation } : {})
@@ -210,13 +239,58 @@ const server = http.createServer(async (request, response) => {
     if (data && (request.method === 'GET' || request.method === 'HEAD')) {
       const { store } = selectedStore(url);
       if (!store) return json(response, 404, { error: 'No game-data policy is installed.' });
-      if (!(await store.status()).ready) return json(response, 409, { error: 'Game data is not ready.' });
-      const policy = store.policyFor(data[1]);
+      if (!(await store.fixed.status()).ready) return json(response, 409, { error: 'Game data is not ready.' });
+      const policy = store.fixed.policyFor(data[1]);
       if (!policy) return json(response, 404, { error: 'Unknown game-data file.' });
-      if (!(await store.validate(policy)).valid) {
+      if (!(await store.fixed.validate(policy)).valid) {
         return json(response, 404, { error: `${policy.name} is not installed.` });
       }
-      return serveFile(request, response, store.filePath(policy), 'private, max-age=31536000, immutable');
+      return serveFile(request, response, store.fixed.filePath(policy), 'private, max-age=31536000, immutable');
+    }
+    if (url.pathname === '/game-data/media/entries' && request.method === 'GET') {
+      const { store } = selectedStore(url);
+      if (!store?.media) return json(response, 404, { error: 'No media-library policy is installed.' });
+      return json(response, 200, await store.media.status());
+    }
+    if (url.pathname === '/game-data/media/uploads' && request.method === 'POST') {
+      const { store } = selectedStore(url);
+      if (!store?.media) return json(response, 404, { error: 'No media-library policy is installed.' });
+      if (!authorized(request)) return json(response, 401, { error: 'The setup token is required.' });
+      return json(response, 201, await store.media.beginUpload(await readJsonBody(request, 1024 * 1024)));
+    }
+    const mediaUploadFile = /^\/game-data\/media\/uploads\/([a-f0-9]{32})\/files\/([a-z0-9._-]+)$/.exec(url.pathname);
+    if (mediaUploadFile && request.method === 'PUT') {
+      const { store } = selectedStore(url);
+      if (!store?.media) return json(response, 404, { error: 'No media-library policy is installed.' });
+      if (!authorized(request)) return json(response, 401, { error: 'The setup token is required.' });
+      return json(response, 201, await store.media.acceptUploadFile(mediaUploadFile[1], mediaUploadFile[2], request));
+    }
+    const mediaUploadCommit = /^\/game-data\/media\/uploads\/([a-f0-9]{32})\/commit$/.exec(url.pathname);
+    if (mediaUploadCommit && request.method === 'POST') {
+      const { store } = selectedStore(url);
+      if (!store?.media) return json(response, 404, { error: 'No media-library policy is installed.' });
+      if (!authorized(request)) return json(response, 401, { error: 'The setup token is required.' });
+      return json(response, 201, await store.media.commitUpload(mediaUploadCommit[1]));
+    }
+    const mediaUpload = /^\/game-data\/media\/uploads\/([a-f0-9]{32})$/.exec(url.pathname);
+    if (mediaUpload && request.method === 'DELETE') {
+      const { store } = selectedStore(url);
+      if (!store?.media) return json(response, 404, { error: 'No media-library policy is installed.' });
+      if (!authorized(request)) return json(response, 401, { error: 'The setup token is required.' });
+      return json(response, 200, await store.media.abortUpload(mediaUpload[1]));
+    }
+    const mediaEntryFile = /^\/game-data\/media\/entries\/([a-f0-9]{32})\/files\/([a-z0-9._-]+)$/.exec(url.pathname);
+    if (mediaEntryFile && (request.method === 'GET' || request.method === 'HEAD')) {
+      const { store } = selectedStore(url);
+      if (!store?.media) return json(response, 404, { error: 'No media-library policy is installed.' });
+      const file = await store.media.entryFilePath(mediaEntryFile[1], mediaEntryFile[2]);
+      return serveFile(request, response, file.path, 'private, max-age=31536000, immutable');
+    }
+    const mediaEntry = /^\/game-data\/media\/entries\/([a-f0-9]{32})$/.exec(url.pathname);
+    if (mediaEntry && request.method === 'GET') {
+      const { store } = selectedStore(url);
+      if (!store?.media) return json(response, 404, { error: 'No media-library policy is installed.' });
+      return json(response, 200, await store.media.detail(mediaEntry[1]));
     }
     if (url.pathname === '/wasm-game-config.js' && (request.method === 'GET' || request.method === 'HEAD')) {
       const body = Buffer.from(`globalThis.WASM_GAME_VARIANT = ${JSON.stringify(variant)};\n`);

@@ -8,6 +8,9 @@
     variantRow: byId('variant-row'), variant: byId('game-variant'), provisioning: byId('data-provisioning'),
     instructions: byId('data-instructions'), chooseDirectory: byId('choose-directory'),
     chooseFiles: byId('choose-files'), fileInput: byId('game-files'), directoryInput: byId('game-directory'),
+    mediaLibrary: byId('media-library'), mediaEntry: byId('media-entry'), mediaStatus: byId('media-status'),
+    addMediaDirectory: byId('add-media-directory'), addMediaFiles: byId('add-media-files'),
+    mediaFiles: byId('media-files'), mediaDirectory: byId('media-directory'),
     setupTokenRow: byId('setup-token-row'), setupToken: byId('setup-token'),
     passwordRow: byId('password-row'), password: byId('game-password'), unlock: byId('unlock'),
     identityRow: byId('identity-row'),
@@ -208,9 +211,24 @@
 
   async function refreshDataGate() {
     const state = await dataClient.applyGate();
-    elements.play.disabled = !state.ready || !adapter;
+    const library = state.mediaLibrary;
+    elements.mediaLibrary.hidden = !library?.configured;
+    if (library?.configured) {
+      const entries = library.entries.map(entry => ({ value: entry.id, label: entry.label }));
+      if (!entries.length) entries.push({ value: '', label: 'No media installed' });
+      options(elements.mediaEntry, entries, library.selectedId);
+      elements.mediaEntry.disabled = !library.entries.length;
+      text(elements.mediaStatus, library.entries.length ?
+        `${library.entries.length} media ${library.entries.length === 1 ? 'entry' : 'entries'} available.` :
+        (library.minimumEntries > 0 ? 'Add media to continue.' : 'No media installed.'));
+    }
+    elements.play.disabled = !state.ready || !adapter ||
+      Boolean(library?.configured && library.minimumEntries > 0 && !library.selectedId);
     if (state.variantRequired) throw new Error('Select a game before provisioning its data.');
-    setStatus(state.ready ? '' : (config.provisioningText || `Install ${config.title || variant} game data once to continue.`));
+    const fixedReady = library ? state.fixedReady : state.ready;
+    setStatus(state.ready ? '' : (!fixedReady ?
+      (config.provisioningText || `Install ${config.title || variant} game data once to continue.`) :
+      (config.mediaProvisioningText || 'Add media to continue.')));
     return state;
   }
 
@@ -218,6 +236,7 @@
     elements.passwordRow.hidden = !visible;
     elements.unlock.hidden = !visible;
     elements.provisioning.hidden = true;
+    elements.mediaLibrary.hidden = true;
     elements.play.hidden = true;
     elements.identityRow.hidden = visible || config.identity === false;
     elements.controllerRow.hidden = visible || WasmGameFramework.normalizeControllerMode(config.controller) === 'disabled';
@@ -251,6 +270,14 @@
     await dataClient.provision(Array.from(files || []), {
       includeOptional: true,
       onProgress: detail => setStatus(`${detail.phase} ${detail.key || 'game data'}…`)
+    });
+    await refreshDataGate();
+  }
+
+  async function provisionMedia(files) {
+    setStatus('Validating and installing media…');
+    await dataClient.media.upload(Array.from(files || []), {
+      onProgress: detail => setStatus(`${detail.phase} ${detail.name || 'media'}…`)
     });
     await refreshDataGate();
   }
@@ -323,6 +350,16 @@
   elements.chooseFiles.addEventListener('click', () => elements.fileInput.click());
   elements.directoryInput.addEventListener('change', () => provision(elements.directoryInput.files).catch(error => setStatus(error.message, true)));
   elements.fileInput.addEventListener('change', () => provision(elements.fileInput.files).catch(error => setStatus(error.message, true)));
+  elements.addMediaDirectory.addEventListener('click', () => elements.mediaDirectory.click());
+  elements.addMediaFiles.addEventListener('click', () => elements.mediaFiles.click());
+  elements.mediaDirectory.addEventListener('change', () => provisionMedia(elements.mediaDirectory.files).catch(error => setStatus(error.message, true)));
+  elements.mediaFiles.addEventListener('change', () => provisionMedia(elements.mediaFiles.files).catch(error => setStatus(error.message, true)));
+  elements.mediaEntry.addEventListener('change', () => {
+    dataClient.media.status().then(library => {
+      dataClient.media.select(elements.mediaEntry.value, library);
+      elements.play.disabled = !elements.mediaEntry.value || !adapter;
+    }).catch(error => setStatus(error.message, true));
+  });
   elements.unlock.addEventListener('click', () => {
     elements.unlock.disabled = true;
     setStatus('Checking password…');

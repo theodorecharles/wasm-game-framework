@@ -24,6 +24,8 @@ assert.match(html, /data-shell-launcher/);
 assert.match(html, /data-shell-loading/);
 assert.match(html, /data-shell-runtime/);
 assert.match(html, /data-shell-provisioning/);
+assert.match(html, /data-shell-media-library/);
+assert.match(html, /data-shell-media-entry/);
 assert.match(html, /data-shell-data-ready/);
 assert.equal((html.match(/<canvas\b/g) || []).length, 1);
 assert.doesNotMatch(html, /legally owned|legal game data|illegal|piracy|entitlement|never uploaded|browser also caches/i,
@@ -42,6 +44,10 @@ assert.match(bootstrap, /text\(elements\.description, config\.description\)/,
 assert.doesNotMatch(bootstrap, /elements\.description[^\n]*(?:game data|files?|cache)/i,
   'an omitted launcher description must not receive framework fallback copy');
 assert.match(bootstrap, /createContainerDataClient\(\{ variant/);
+assert.match(bootstrap, /dataClient\.media\.upload/);
+assert.match(bootstrap, /library\.minimumEntries > 0 && !library\.selectedId/,
+  'an optional zero-entry media library must not disable Play');
+assert.match(framework, /runMediaBundleValidator/);
 assert.match(bootstrap, /createPersistenceManager\(/,
   'the canonical bootstrap must expose variant-scoped save and configuration persistence');
 assert.match(bootstrap, /persistenceChanged/);

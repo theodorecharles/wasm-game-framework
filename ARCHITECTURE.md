@@ -54,8 +54,12 @@ engine:
   frames, connection lifecycle, and optional haptics;
 - browser/platform capability detection and actionable unsupported-browser
   diagnostics;
-- validated game-file caching in IndexedDB, downstream format-validator
-  modules with identical Node/browser semantics, and durable-storage requests;
+- validated fixed-file and selected-media caching in IndexedDB, downstream
+  format-validator modules with identical Node/browser semantics, and durable-
+  storage requests;
+- a generic private media library with atomic multi-file entry installation,
+  opaque safe listings, explicit selection, bounded validation reads, and no
+  engine or media-format knowledge;
 - first-run validated container provisioning into persistent `/data`, exact
   same-origin download allowlists, and automatic removal of setup UI afterward;
 - cache-first game-data sets and read-only WORKERFS/chunked MEMFS mounting;
@@ -74,6 +78,15 @@ command, game cvar, or network protocol. It owns bounded file reads, digests,
 atomic installation, cache plumbing, and status/error handling. Downstream
 engine/game modules own format recognition and title policy. Validator module
 versions and policy are part of browser and server validation cache keys.
+
+Fixed files and library media are separate first-class contracts. Fixed files
+retain their stable keys and compatibility APIs. Library entries have opaque
+IDs, safe public summary metadata, and a private detail document only after an
+entry is selected. A bundle is staged below `.incoming`, validated as one set,
+and renamed into the visible entries directory only after every declared byte
+arrives and the downstream bundle validator accepts it. Browser caching is
+scoped to one selected entry per library; switching entries clears the old
+selection before populating the new one.
 
 ## Engine-family layer
 

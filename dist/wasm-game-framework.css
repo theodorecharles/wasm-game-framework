@@ -134,19 +134,27 @@ html.wasm-game-framework body {
   text-transform: uppercase;
 }
 
-.wasm-game-framework [data-shell-controller] {
+.wasm-game-framework [data-shell-controller],
+.wasm-game-framework [data-shell-media-library] {
   margin: 0.8rem 0;
   padding: 0.7rem 0.8rem;
   border: 1px solid #534526;
   background: rgb(6 5 4 / 35%);
 }
 
-.wasm-game-framework [data-shell-controller] label {
+.wasm-game-framework [data-shell-controller] label,
+.wasm-game-framework [data-shell-media-library] label {
   margin: 0;
 }
 
 .wasm-game-framework [data-shell-controller-mode],
 .wasm-game-framework [data-shell-controller-status] {
+  min-height: 0;
+  margin: 0.5rem 0 0 !important;
+  font-size: 0.78rem;
+}
+
+.wasm-game-framework [data-shell-media-status] {
   min-height: 0;
   margin: 0.5rem 0 0 !important;
   font-size: 0.78rem;
