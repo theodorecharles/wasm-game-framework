@@ -1,12 +1,12 @@
 # WASM Game Framework
 
 This repository is the single launcher, loading-surface, controls, viewport,
-owner-data, PWA, and container-lifecycle contract used by a portfolio of native
+game-data, PWA, and container-lifecycle contract used by a portfolio of native
 game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.7.3**
+Current release: **0.7.4**
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -22,7 +22,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.7.3
+./scripts/build-base-image.sh wasm-game-framework:0.7.4
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -168,8 +168,18 @@ Engine adapters report their native state through `readEngineState()`. The
 framework focuses the canvas and captures in `gameplay`; entering a menu,
 pause, debrief, launcher, or crash state releases it. An asynchronous JOIN,
 New Game, or Resume action reports a separate synchronous
-`readCaptureIntent()` while it honestly remains in `loading`, allowing the
-trusted menu click to reserve capture until the first controllable frame.
+`readCaptureIntent()`. The framework snapshots that bit at pointerdown and
+tracks the matching pointer ID/button through pointerup. A false-to-true edge
+during that exact gesture may reserve pointer lock even when queued SDL/native
+work leaves `readEngineState()` at `menu` or `paused` until the next frame.
+This exception is event-scoped: intent already true before pointerdown is
+stale, mismatched/cancelled gestures cannot consume it, and persistent capture
+still requires honest `loading` or `gameplay` state. The adapter must expose
+intent from native menu dispatch or from a predeclared capture target for that
+exact button; a generic menu click never implies capture. A next-animation-
+frame check remains for engines whose native state becomes visible late, but
+it is a compatibility fallback and cannot replace the first trusted request in
+browsers that require transient activation.
 Browser defaults for gameplay keys are suppressed only while input is actually
 captured, so Ctrl+Shift+R, copy/paste, and normal page controls continue to
 work outside play. A lost gameplay capture invokes the adapter's
@@ -205,8 +215,11 @@ There are deliberately two durable data layers:
 2. Each browser downloads each validated file from that container once and
    retains it in origin-private IndexedDB for fast reloads.
 
-Every game image includes `wasm-game-data.json`, an exact filename,
-size/signature, and preferably SHA-256 allowlist. While required files are
+Every game image includes `wasm-game-data.json` with filename and bounded-size
+policies. Exact `sizes`, byte `magic`, and `sha256` allowlists remain available
+when a title has a closed set of known releases. A downstream validator module
+can instead recognize a family of structurally valid releases without teaching
+the framework about a game format. While required files are
 missing or invalid, `createContainerDataClient().applyGate()` shows only the
 elements marked `data-shell-provisioning`. The first-run picker uploads exact
 files to `/game-data/setup/<key>`; the framework server validates before an
@@ -215,28 +228,74 @@ provisioning. As soon as `/game-data/status` reports ready, provisioning is
 hidden for every visitor and only the regular launcher is shown.
 
 The data server exposes neither `/data` nor `/local-data`. Once the complete
-allowlist is valid, it serves only `/game-data/files/<key>`. Arbitrary names,
-path traversal, invalid sizes/signatures/hashes, and replacement of
-already-valid files are rejected.
+policy is valid, it serves only `/game-data/files/<key>`. Arbitrary names, path
+traversal, files outside their size envelope, failed validators, and replacement
+of already-valid files are rejected.
 
 Example site manifest:
 
 ```json
 {
-  "namespace": "quake",
-  "version": "steam-v1",
+  "namespace": "example-game",
+  "version": "content-v1",
+  "validator": {
+    "module": "/data-validator.mjs",
+    "export": "validateGameData",
+    "version": "archive-reader-v3",
+    "maxReadBytes": 4194304,
+    "maxTotalReadBytes": 67108864
+  },
   "files": [
     {
-      "key": "pak0",
-      "name": "pak0.pak",
-      "path": "id1/pak0.pak",
-      "size": 18689235,
-      "magic": "PACK",
-      "sha256": "..."
+      "key": "archive",
+      "name": "game.dat",
+      "path": "base/game.dat",
+      "maxSize": 536870912,
+      "validator": {
+        "policy": { "requiredSections": ["maps", "textures"] }
+      }
     }
   ]
 }
 ```
+
+The root or selected variant may provide validator module defaults; each file
+inherits them and may override `policy`, limits, export, or version. Set a
+file's `validator` to `false` to opt it out. A validated file must declare
+either finite `sizes` or `maxSize`, which is also the upload envelope. Validator
+paths are traversal-safe same-origin `.mjs` files inside the game site.
+
+The exact same module is imported by the Node provisioning server and browser
+cache validator. It receives no filesystem or framework internals—only bounded
+access to the selected file:
+
+```js
+export async function validateGameData({ name, size, policy, read, digest }) {
+  const header = await read(0, 16); // Uint8Array; range and budgets enforced
+  if (!recognized(header, policy)) {
+    return { accepted: false, error: 'unrecognized archive header' };
+  }
+  return {
+    accepted: true,
+    identity: detectIdentity(header),
+    version: detectVersion(header),
+    fingerprint: await digest('SHA-256'),
+    metadata: { sections: await inspectDirectory(read, size) }
+  };
+}
+```
+
+`read(offset, length)` is constrained to the file, to `maxReadBytes` per call,
+and to `maxTotalReadBytes` overall (one file length by default). `digest()`
+supports SHA-256, SHA-384, and SHA-512; it streams in Node and uses Web Crypto
+in the browser. A digest is a separate, at-most-one-pass operation cached per
+algorithm; it does not consume the random-read budget. The declared file-size
+envelope bounds that pass. A validator decides whether a digest gates
+acceptance. Results must be bounded JSON data and use `{ accepted: true, ... }` or
+`{ accepted: false, error }`. Successful identity/version/fingerprint metadata,
+the validator module/version/policy, and rejection reason appear in setup
+status. Uploads are validated at a private temporary path and atomically renamed
+only after acceptance.
 
 Suite images may put independent policies under a top-level `variants` map.
 The launcher passes its selected deployment key to
@@ -251,8 +310,8 @@ omitted.
   "namespace": "doom-suite",
   "version": "iwads-v1",
   "variants": {
-    "doom":  { "files": [{ "key": "iwad", "name": "doom.wad",  "path": "doom/doom.wad" }] },
-    "doom2": { "files": [{ "key": "iwad", "name": "doom2.wad", "path": "doom2/doom2.wad" }] }
+    "doom":  { "files": [{ "key": "iwad", "name": "doom.wad",  "path": "doom/doom.wad",  "maxSize": 268435456 }] },
+    "doom2": { "files": [{ "key": "iwad", "name": "doom2.wad", "path": "doom2/doom2.wad", "maxSize": 268435456 }] }
   }
 }
 ```
@@ -263,7 +322,7 @@ later through the same exact allowlisted setup endpoint. Calling
 `provision(source, { includeOptional: true })` explicitly requests that later
 optional-data pass.
 
-`WasmGameFramework.createDataCache()` stores already validated owner files as
+`WasmGameFramework.createDataCache()` stores already validated game files as
 Blobs in a per-game IndexedDB database. `getOrLoad()` checks that private cache
 first, deduplicates simultaneous requests, and calls the container download
 loader only on a true miss. A cache-version bump invalidates prior records
@@ -271,35 +330,41 @@ without redownloading unchanged code assets. `persist()` requests durable
 browser storage during the Play gesture and reports quota estimates.
 
 ```js
-const data = WasmGameFramework.createDataCache({
+const data = WasmGameFramework.createOwnerDataSet({
   namespace: 'doom-suite',
-  version: 'iwad-policy-v1'
+  version: 'iwad-content-v1',
+  validator: {
+    module: '/data-validator.mjs',
+    export: 'validateIwad',
+    version: 'iwad-reader-v2'
+  },
+  files: [{
+    key: 'doom2', name: 'doom2.wad', maxSize: 268435456,
+    validator: { policy: { game: 'doom2' } }
+  }]
 });
-await data.persist();
-const entry = await data.getOrLoad({
-  key: 'doom2.wad',
-  load: () => fetch('/game-data/files/doom2').then(r => r.blob()),
-  validate: validateDoomIwad
-});
-// entry.cached is true after a hard refresh; no game-data request was made.
+const restored = await context.dataClient.load(data);
+// restored.entries[0].cached is true after the first successful load.
 ```
 
-Validation policy remains engine-owned. A record is trusted on later loads
-only inside the same namespace/version, so changing allowed sizes, hashes, or
-formats must bump that version. IndexedDB is origin-private; provisioning
-uploads only to the user's own same-origin container.
+Validation policy remains downstream-owned. The game-data cache automatically
+includes each validator's module path, explicit validator version, limits, and
+policy in its revalidation key. Bump the validator `version` whenever its module
+semantics change; change the content-set `version` for non-validator policy
+changes. IndexedDB is origin-private; provisioning uploads only to the user's
+own same-origin container.
 
 For very large archives whose full digest was already verified during initial
 ingestion, a file policy may set `validateCached: false`. Cache restores still
-check the exact policy version, filename, size, and signature but skip the
-expensive custom digest callback. Changing any allowlist digest must therefore
-bump the owner-data-set version.
+check the exact cache-policy version, filename, size, and signature but skip
+the downstream validator and custom callback. Validator version/policy changes
+still invalidate that record automatically.
 
 For a multi-file game, `createOwnerDataSet()` applies the engine/game policy,
 restores every valid file cache-first, requests only missing files, and asks
 for durable storage. `mountOwnerFiles()` then presents the results read-only
 through WORKERFS when available or copies them to MEMFS in bounded chunks.
-This is the standard owner-data path for every downstream engine.
+This is the standard game-data path for every downstream engine.
 Legacy Emscripten filesystems are supported through their `createPath` API,
 and a same-size file already restored by the engine's persistent filesystem is
 reused instead of being destructively reopened. Set `reuseExisting: false`
@@ -345,7 +410,7 @@ required data independently.
 
 The generic static-image builder first creates the exact versioned
 `wasm-game-framework:<version>` base image, then layers only a game site and
-variant lock on it. It never copies owner data into an image:
+variant lock on it. It never copies game data into an image:
 
 ```bash
 ./scripts/build-static-image.sh ../crispy-doom-wasm/web doom-wasm:dev suite
@@ -357,7 +422,7 @@ framework base. Without that override, every local game-image build rebuilds
 the versioned base from the sibling framework checkout so uncommitted framework
 work flows into local downstream images too.
 
-At runtime `/data` is an owner-mounted persistent volume. The framework server
+At runtime `/data` is a persistent volume. The framework server
 is the sole provisioning and download boundary described above.
 
 ## Development
@@ -379,18 +444,14 @@ Projects are listed as **Live** when a public deployment is available and
 | --- | --- | --- | --- |
 | id Tech 1 | Doom, Doom II, TNT, Plutonia, Heretic, Hexen, Strife, Chex Quest | **Still in development** | [idtech1-wasm](https://github.com/theodorecharles/idtech1-wasm) |
 | id Tech 2 | Quake, Quake II | **Still in development** | [idtech2-wasm](https://github.com/theodorecharles/idtech2-wasm) |
-| id Tech 3 | Quake III Arena | **Still in development** | [quake3-wasm](https://github.com/theodorecharles/quake3-wasm) |
-| id Tech 3 | Return to Castle Wolfenstein | **Still in development** | [rtcw-wasm](https://github.com/theodorecharles/rtcw-wasm) |
-| id Tech 3 | Wolfenstein: Enemy Territory | **Live** | [wolfet-wasm](https://github.com/theodorecharles/wolfet-wasm), [live deployment](https://wolfet.tedcharles.net/) |
-| id Tech 4 | Doom 3, Resurrection of Evil | **Still in development** | [idtech4-wasm](https://github.com/theodorecharles/idtech4-wasm), [doom3-wasm](https://github.com/theodorecharles/doom3-wasm) |
-| id Tech 4 | Quake 4 | **Still in development** | [idtech4-wasm](https://github.com/theodorecharles/idtech4-wasm), [quake4-wasm](https://github.com/theodorecharles/quake4-wasm) |
-| Build | Blood | **Still in development** | [blood-wasm](https://github.com/theodorecharles/blood-wasm); canonical `build-wasm` family repository is planned |
-| Build | Duke Nukem 3D | **Still in development** | Canonical `build-wasm` family repository is planned |
+| id Tech 3 | Quake III Arena, Return to Castle Wolfenstein | **Still in development** | [idtech3-wasm](https://github.com/theodorecharles/idtech3-wasm) |
+| id Tech 3 | Wolfenstein: Enemy Territory | **Live** | [idtech3-wasm](https://github.com/theodorecharles/idtech3-wasm), [wolfet-wasm](https://github.com/theodorecharles/wolfet-wasm), [live deployment](https://wolfet.tedcharles.net/) |
+| id Tech 4 | Doom 3, Resurrection of Evil, Quake 4 | **Still in development** | [idtech4-wasm](https://github.com/theodorecharles/idtech4-wasm) |
+| Build | Blood, Duke Nukem 3D | **Still in development** | [build-wasm](https://github.com/theodorecharles/build-wasm) |
 | GoldSource | Half-Life, Opposing Force, Blue Shift, Counter-Strike | **Still in development** | [goldsource-wasm](https://github.com/theodorecharles/goldsource-wasm) |
-| Source | Half-Life 2, Counter-Strike: Source | **Still in development** | Canonical `source-wasm` family repository is planned |
+| Source | Half-Life 2 | **Still in development** | [source-wasm](https://github.com/theodorecharles/source-wasm) |
 | Wolf3D | Wolfenstein 3D, Spear of Destiny | **Still in development** | [wolf3d-wasm](https://github.com/theodorecharles/wolf3d-wasm) |
-| DOSBox | Jill of the Jungle and future DOS titles | **Still in development** | Canonical `dosbox-wasm` repository is planned |
-| Standalone | Call of Duty 2 | **Still in development** | Canonical `cod2-wasm` repository is being prepared |
+| DOSBox | Jill of the Jungle and future DOS titles | **Still in development** | [dosbox-wasm](https://github.com/theodorecharles/dosbox-wasm) |
 
 The intended public shape is one repository per reusable engine family, not
 one repository per executable and not one monorepo for unrelated engines. A

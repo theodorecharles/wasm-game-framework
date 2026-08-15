@@ -534,11 +534,12 @@
       const pending = (async () => {
         const loaded = await request.load();
         const source = loaded && loaded.file ? loaded.file : loaded;
-        if (typeof request.validate === 'function') await request.validate(source);
+        const validation = typeof request.validate === 'function' ? await request.validate(source) : null;
         try {
           return await put(key, source, {
             ...(request.metadata || {}),
-            ...((loaded && loaded.metadata) || {})
+            ...((loaded && loaded.metadata) || {}),
+            ...(validation ? { dataValidation: validation } : {})
           });
         } catch (error) {
           console.warn(`[WASM data cache] ${key} could not be persisted:`, error);
@@ -582,7 +583,252 @@
     throw new Error('Owner-data magic must be a string, byte array, or Uint8Array.');
   }
 
-  async function validateOwnerFile(file, policy, onProgress) {
+  function deepFreezeJson(value) {
+    if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+      for (const item of Object.values(value)) deepFreezeJson(item);
+      Object.freeze(value);
+    }
+    return value;
+  }
+
+  function jsonPolicy(value) {
+    if (value === undefined) return Object.freeze({});
+    let encoded;
+    try { encoded = JSON.stringify(value); } catch (_) { throw new Error('Data-validator policy must be JSON-serializable.'); }
+    if (encoded === undefined || encoded.length > 65536) {
+      throw new Error('Data-validator policy must be JSON-serializable and no larger than 64 KiB.');
+    }
+    const decoded = JSON.parse(encoded);
+    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+      throw new Error('Data-validator policy must be a JSON object.');
+    }
+    return deepFreezeJson(decoded);
+  }
+
+  function normalizeDataValidatorDeclaration(value) {
+    if (value === undefined || value === null || value === false) return null;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('Data validator must be an object.');
+    }
+    const module = String(value.module || '');
+    if (!module.startsWith('/') || module.includes('\\') || module.includes('\0') || /[?#]/.test(module)) {
+      throw new Error('Data-validator module must be an absolute same-origin path.');
+    }
+    const segments = module.split('/').slice(1);
+    if (!segments.length || segments.some(segment => !/^[A-Za-z0-9._-]+$/.test(segment) || segment === '.' || segment === '..') ||
+        !module.endsWith('.mjs')) {
+      throw new Error('Data-validator module must name a traversal-safe .mjs file.');
+    }
+    const exportName = String(value.export || 'default');
+    if (exportName !== 'default' && !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(exportName)) {
+      throw new Error('Data-validator export must be default or a JavaScript identifier.');
+    }
+    const version = String(value.version || '1');
+    if (!version || version.length > 128 || /[\u0000-\u001f]/.test(version)) {
+      throw new Error('Data-validator version must be a non-empty string no longer than 128 characters.');
+    }
+    const maxReadBytes = value.maxReadBytes === undefined ? 4 * 1024 * 1024 : Number(value.maxReadBytes);
+    const maxTotalReadBytes = value.maxTotalReadBytes === undefined || value.maxTotalReadBytes === null
+      ? null : Number(value.maxTotalReadBytes);
+    if (!Number.isSafeInteger(maxReadBytes) || maxReadBytes < 1 || maxReadBytes > 512 * 1024 * 1024) {
+      throw new Error('Data-validator maxReadBytes must be an integer from 1 byte through 512 MiB.');
+    }
+    if (maxTotalReadBytes !== null &&
+        (!Number.isSafeInteger(maxTotalReadBytes) || maxTotalReadBytes < 0 || maxTotalReadBytes > 32 * 1024 * 1024 * 1024)) {
+      throw new Error('Data-validator maxTotalReadBytes must be an integer from 0 bytes through 32 GiB.');
+    }
+    return Object.freeze({
+      module,
+      export: exportName,
+      version,
+      policy: jsonPolicy(value.policy),
+      maxReadBytes,
+      maxTotalReadBytes
+    });
+  }
+
+  function dataValidatorCacheTag(value) {
+    const rule = normalizeDataValidatorDeclaration(value);
+    return rule ? JSON.stringify({
+      module: rule.module,
+      export: rule.export,
+      version: rule.version,
+      policy: rule.policy,
+      maxReadBytes: rule.maxReadBytes,
+      maxTotalReadBytes: rule.maxTotalReadBytes
+    }) : '';
+  }
+
+  function validationText(value, field, maximum) {
+    if (value === undefined || value === null || value === '') return null;
+    const text = String(value);
+    if (text.length > maximum || /[\u0000-\u001f\u007f]/.test(text)) {
+      throw new Error(`Data-validator ${field} is invalid.`);
+    }
+    return text;
+  }
+
+  function normalizeDataValidatorResult(value) {
+    if (!value || typeof value !== 'object' || typeof value.accepted !== 'boolean') {
+      throw new Error('Data validator must return an object with an accepted boolean.');
+    }
+    const error = validationText(value.error, 'error', 1024);
+    if (!value.accepted && !error) throw new Error('A rejected data-validator result must include an error.');
+    let metadata = null;
+    if (value.metadata !== undefined && value.metadata !== null) {
+      let encoded;
+      try { encoded = JSON.stringify(value.metadata); } catch (_) { throw new Error('Data-validator metadata must be JSON-serializable.'); }
+      if (encoded === undefined || encoded.length > 16384) {
+        throw new Error('Data-validator metadata must be JSON-serializable and no larger than 16 KiB.');
+      }
+      metadata = deepFreezeJson(JSON.parse(encoded));
+    }
+    return Object.freeze({
+      accepted: value.accepted,
+      error: value.accepted ? null : error,
+      identity: validationText(value.identity, 'identity', 256),
+      version: validationText(value.version, 'version', 256),
+      fingerprint: validationText(value.fingerprint, 'fingerprint', 512),
+      metadata
+    });
+  }
+
+  function createBoundedDataReader(source, declaration) {
+    const rule = normalizeDataValidatorDeclaration(declaration);
+    if (!rule) throw new Error('A data-validator declaration is required.');
+    const size = Number(source && source.size);
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error('Data-validator source size is invalid.');
+    const sourceRead = typeof Blob !== 'undefined' && source instanceof Blob
+      ? async (offset, length) => new Uint8Array(await source.slice(offset, offset + length).arrayBuffer())
+      : source && typeof source.read === 'function'
+        ? source.read.bind(source)
+        : null;
+    if (!sourceRead) throw new Error('Data-validator source must be a Blob or provide read(offset, length).');
+    const totalLimit = rule.maxTotalReadBytes === null ? size : rule.maxTotalReadBytes;
+    let bytesRead = 0;
+    let readCalls = 0;
+    const digests = new Map();
+    async function read(offset, length) {
+      const start = Number(offset);
+      const count = Number(length);
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(count) || start < 0 || count < 0) {
+        throw new Error('Data-validator reads require non-negative integer offsets and lengths.');
+      }
+      if (count > rule.maxReadBytes) {
+        throw new Error(`Data-validator read exceeds the per-call limit of ${rule.maxReadBytes} bytes.`);
+      }
+      if (start > size || count > size - start) throw new Error('Data-validator read extends beyond the end of the file.');
+      if (count > totalLimit - bytesRead) {
+        throw new Error(`Data-validator reads exceed the total limit of ${totalLimit} bytes.`);
+      }
+      const value = await sourceRead(start, count);
+      const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+      if (bytes.byteLength !== count) throw new Error('Data-validator source returned a truncated read.');
+      bytesRead += count;
+      readCalls += 1;
+      return bytes;
+    }
+    function digestName(value) {
+      const requested = String(value || '').toUpperCase().replace(/_/g, '-');
+      const name = requested === 'SHA256' ? 'SHA-256' : requested === 'SHA384' ? 'SHA-384' :
+        requested === 'SHA512' ? 'SHA-512' : requested;
+      if (!['SHA-256', 'SHA-384', 'SHA-512'].includes(name)) {
+        throw new Error(`Data-validator digest algorithm ${value} is not supported.`);
+      }
+      return name;
+    }
+    async function digest(algorithm) {
+      const name = digestName(algorithm);
+      if (!digests.has(name)) {
+        digests.set(name, (async () => {
+          if (source && typeof source.digest === 'function') return String(await source.digest(name)).toLowerCase();
+          if (typeof Blob === 'undefined' || !(source instanceof Blob) || !globalThis.crypto?.subtle) {
+            throw new Error(`Data-validator ${name} digest is unavailable in this environment.`);
+          }
+          const bytes = await globalThis.crypto.subtle.digest(name, await source.arrayBuffer());
+          return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+        })());
+      }
+      return digests.get(name);
+    }
+    return Object.freeze({ size, read, digest, stats: () => Object.freeze({ bytesRead, readCalls }) });
+  }
+
+  async function loadBrowserDataValidator(modulePath) {
+    if (typeof location === 'undefined') throw new Error('Browser location is unavailable for the data-validator module.');
+    const url = new URL(modulePath, location.href);
+    if (url.origin !== location.origin) throw new Error('Data-validator module must use the current origin.');
+    return import(url.href);
+  }
+
+  const dataValidatorModuleCaches = new WeakMap();
+
+  function cachedValidatorModule(loadModule, modulePath) {
+    let modules = dataValidatorModuleCaches.get(loadModule);
+    if (!modules) {
+      modules = new Map();
+      dataValidatorModuleCaches.set(loadModule, modules);
+    }
+    if (!modules.has(modulePath)) {
+      const pending = Promise.resolve().then(() => loadModule(modulePath));
+      modules.set(modulePath, pending);
+      pending.catch(() => modules.delete(modulePath));
+    }
+    return modules.get(modulePath);
+  }
+
+  async function runDataValidator(source, declaration, options) {
+    const rule = normalizeDataValidatorDeclaration(declaration);
+    if (!rule) return null;
+    const config = options || {};
+    const loadModule = config.loadModule || loadBrowserDataValidator;
+    let module;
+    try { module = await cachedValidatorModule(loadModule, rule.module); } catch (_) {
+      throw new Error(`Data-validator module ${rule.module} could not be loaded.`);
+    }
+    const validate = module && module[rule.export];
+    if (typeof validate !== 'function') {
+      throw new Error(`Data-validator module ${rule.module} does not export ${rule.export}().`);
+    }
+    const reader = createBoundedDataReader(source, rule);
+    let value;
+    try {
+      value = await validate(Object.freeze({
+        name: String(config.name || source.name || ''),
+        size: reader.size,
+        policy: rule.policy,
+        read: reader.read,
+        digest: reader.digest
+      }));
+    } catch (error) {
+      const message = String(error && error.message || 'validator execution failed')
+        .replace(/[\u0000-\u001f]+/g, ' ').slice(0, 1024);
+      throw new Error(`Data validator failed: ${message || 'validator execution failed'}.`);
+    }
+    const result = normalizeDataValidatorResult(value);
+    return Object.freeze({
+      ...result,
+      ...reader.stats(),
+      module: rule.module,
+      export: rule.export,
+      validatorVersion: rule.version,
+      policy: rule.policy
+    });
+  }
+
+  const ownerFileValidationResults = new WeakMap();
+
+  function ownerFileValidation(file) {
+    return file && ownerFileValidationResults.get(file) || null;
+  }
+
+  async function browserBlobDigest(file, algorithm) {
+    if (!globalThis.crypto?.subtle) throw new Error(`${algorithm} validation is unavailable in this browser.`);
+    const bytes = await globalThis.crypto.subtle.digest(algorithm, await file.arrayBuffer());
+    return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function validateOwnerFile(file, policy, onProgress, validationOptions) {
     const rule = policy || {};
     if (!(file instanceof Blob)) throw new Error(`${rule.key || 'Owner data'} is not a browser File or Blob.`);
 
@@ -616,6 +862,22 @@
       }
     }
 
+    const allowedSha256 = (rule.sha256 ? (Array.isArray(rule.sha256) ? rule.sha256 : [rule.sha256]) : [])
+      .map(value => String(value).toLowerCase());
+    if (allowedSha256.some(value => !/^[a-f0-9]{64}$/.test(value))) {
+      throw new Error(`Invalid SHA-256 policy for ${rule.key || actualName}.`);
+    }
+    if (allowedSha256.length) {
+      const digest = await browserBlobDigest(file, 'SHA-256');
+      if (!allowedSha256.includes(digest)) throw new Error(`${actualName} has an unrecognized SHA-256 digest.`);
+    }
+
+    if (rule.validator) {
+      const result = await runDataValidator(file, rule.validator, { ...(validationOptions || {}), name: actualName });
+      if (!result.accepted) throw new Error(result.error);
+      ownerFileValidationResults.set(file, result);
+    } else ownerFileValidationResults.delete(file);
+
     if (typeof rule.validate === 'function') {
       await rule.validate(file, Object.freeze({ name: actualName, size: file.size, policy: rule, onProgress }));
     }
@@ -627,10 +889,26 @@
     const config = options || {};
     const policies = (config.files || []).map((policy, index) => {
       const key = String(policy.key || policy.name || `file-${index}`).toLowerCase();
-      return Object.freeze({ ...policy, key, cacheKey: String(policy.cacheKey || key).toLowerCase() });
+      let validator = policy.validator;
+      if (validator !== false && config.validator) {
+        const override = validator && typeof validator === 'object' ? validator : {};
+        validator = {
+          ...config.validator,
+          ...override,
+          policy: { ...(config.validator.policy || {}), ...(override.policy || {}) }
+        };
+      }
+      validator = validator ? normalizeDataValidatorDeclaration(validator) : null;
+      const sizes = Array.isArray(policy.sizes) ? policy.sizes : policy.size === undefined ? [] : [policy.size];
+      if (validator && !sizes.length && policy.maxSize === undefined) {
+        throw new Error(`Data validator for ${key} requires sizes or maxSize as an upload envelope.`);
+      }
+      return Object.freeze({ ...policy, validator, key, cacheKey: String(policy.cacheKey || key).toLowerCase() });
     });
     if (!policies.length) throw new Error('An owner-data set needs at least one file policy.');
-    const cache = config.cache || createDataCache({ namespace: config.namespace, version: config.version });
+    const validatorTags = policies.filter(policy => policy.validator).map(policy => `${policy.key}:${dataValidatorCacheTag(policy.validator)}`);
+    const cacheVersion = validatorTags.length ? `${String(config.version || '1')}:validators:${validatorTags.join('|')}` : config.version;
+    const cache = config.cache || createDataCache({ namespace: config.namespace, version: cacheVersion });
 
     function indexSources(source) {
       if (!source || typeof source === 'function' || typeof source.getFileHandle === 'function') return source;
@@ -670,6 +948,7 @@
 
     async function load(source, loadOptions) {
       const request = loadOptions || {};
+      const validationOptions = request.validationOptions || config.validationOptions;
       const indexed = indexSources(source);
       const entries = [];
       for (let index = 0; index < policies.length; index += 1) {
@@ -677,13 +956,20 @@
         const progress = detail => request.onProgress?.({ ...detail, index, total: policies.length });
         progress({ phase: 'checking-cache', key: policy.key });
         try {
-          const cachedPolicy = policy.validateCached === false ? { ...policy, validate: undefined } :
+          const cachedPolicy = policy.validateCached === false ?
+            { ...policy, validate: undefined, validator: null, sha256: undefined } :
             typeof policy.validateCached === 'function' ? { ...policy, validate: policy.validateCached } : policy;
           const entry = await cache.getOrLoad({
             key: policy.cacheKey,
             load: () => sourceFile(indexed, policy),
-            validate: file => validateOwnerFile(file, policy, progress),
-            validateCached: file => validateOwnerFile(file, cachedPolicy, progress),
+            validate: async file => {
+              await validateOwnerFile(file, policy, progress, validationOptions);
+              return ownerFileValidation(file);
+            },
+            validateCached: async file => {
+              await validateOwnerFile(file, cachedPolicy, progress, validationOptions);
+              return ownerFileValidation(file);
+            },
             metadata: { policyKey: policy.key }
           });
           entries.push(Object.freeze({ ...entry, policy, mountName: policy.mountName || policy.name || entry.file.name }));
@@ -1033,6 +1319,8 @@
     let resizeFrame = 0;
     let fullscreenResizeFrame = 0;
     let captureFrame = 0;
+    let trustedIntentEvent = null;
+    const pointerIntentGestures = new Map();
     let canvasObserver = null;
     let engineState = Object.values(ENGINE_STATES).includes(config.engineState) ? config.engineState : ENGINE_STATES.LAUNCHER;
     let preferences = null;
@@ -1041,10 +1329,14 @@
       return Boolean(canvas && document.pointerLockElement === canvas);
     }
 
+    function readCaptureIntent() {
+      if (typeof config.readCaptureIntent !== 'function') return false;
+      try { return config.readCaptureIntent() === true; } catch (_) { return false; }
+    }
+
     function captureDesired() {
       if (engineState === ENGINE_STATES.GAMEPLAY) return true;
-      if (engineState !== ENGINE_STATES.LOADING || typeof config.readCaptureIntent !== 'function') return false;
-      try { return config.readCaptureIntent() === true; } catch (_) { return false; }
+      return engineState === ENGINE_STATES.LOADING && readCaptureIntent();
     }
 
     function publishInputCapture() {
@@ -1068,8 +1360,9 @@
       return captured;
     }
 
-    function requestInputCapture(event) {
-      if (!canvas || config.pointerLock !== true || !captureDesired() || inputCaptured()) return false;
+    function requestInputCapture(event, requestOptions) {
+      const trustedIntent = requestOptions?.trustedIntent === true && trustedIntentEvent === event;
+      if (!canvas || config.pointerLock !== true || (!trustedIntent && !captureDesired()) || inputCaptured()) return false;
       if (typeof config.shouldCapture === 'function' && !config.shouldCapture(event, canvas)) return false;
       try {
         const pending = canvas.requestPointerLock?.();
@@ -1086,14 +1379,18 @@
       if (owned.includes(event.key)) event.preventDefault();
     }
 
+    function refreshAuthoritativeState() {
+      if (typeof config.readEngineState !== 'function') return engineState;
+      const reported = String(config.readEngineState() || '').toLowerCase();
+      if (Object.values(ENGINE_STATES).includes(reported) && reported !== engineState) setEngineState(reported);
+      return engineState;
+    }
+
     function captureAfterInteraction(event) {
       if (captureFrame) cancelAnimationFrame(captureFrame);
       captureFrame = requestAnimationFrame(() => {
         captureFrame = 0;
-        if (typeof config.readEngineState === 'function') {
-          const reported = String(config.readEngineState() || '').toLowerCase();
-          if (Object.values(ENGINE_STATES).includes(reported) && reported !== engineState) setEngineState(reported);
-        }
+        refreshAuthoritativeState();
         if (captureDesired()) requestInputCapture(event);
       });
     }
@@ -1119,11 +1416,49 @@
       window.dispatchEvent(new CustomEvent('wasm-game-framework-pointer', { detail }));
     }
 
+    function pointerGestureKey(event) {
+      const pointerId = Number.isFinite(Number(event.pointerId)) ? Number(event.pointerId) : 'mouse';
+      const button = Number.isFinite(Number(event.button)) ? Number(event.button) : 0;
+      return `${pointerId}:${button}`;
+    }
+
+    function clearPointerIntentGestures(event) {
+      if (!event || !Number.isFinite(Number(event.pointerId))) {
+        pointerIntentGestures.clear();
+        return;
+      }
+      const prefix = `${Number(event.pointerId)}:`;
+      for (const key of pointerIntentGestures.keys()) {
+        if (key.startsWith(prefix)) pointerIntentGestures.delete(key);
+      }
+    }
+
     function publishPointerButton(event) {
       if (!canvas || inputCaptured()) return;
       const point = pointerPosition(event);
       const detail = Object.freeze({ ...point, state: engineState, canvas, button: event.button, pressed: event.type === 'pointerdown' });
+      const gestureKey = pointerGestureKey(event);
+      const intentBefore = readCaptureIntent();
+      if (event.type === 'pointerdown') {
+        clearPointerIntentGestures(event);
+        pointerIntentGestures.set(gestureKey, Object.freeze({ intentBefore }));
+      }
+      const trackedGesture = event.type === 'pointerup' ? pointerIntentGestures.get(gestureKey) : null;
       config.onPointerButton?.(detail, event);
+      if (event.type === 'pointerup') {
+        // Pointer lock must be requested before this trusted activation ends.
+        // The adapter/native seam therefore exposes launch intent while its
+        // pointerButton callback is still on the stack. Keep the rAF check as
+        // a compatibility fallback for state that becomes visible next frame.
+        refreshAuthoritativeState();
+        const intentAfter = readCaptureIntent();
+        const eventScopedIntent = Boolean(trackedGesture && !trackedGesture.intentBefore && intentAfter);
+        clearPointerIntentGestures(event);
+        if (eventScopedIntent) {
+          trustedIntentEvent = event;
+          try { requestInputCapture(event, { trustedIntent: true }); } finally { trustedIntentEvent = null; }
+        } else if (captureDesired()) requestInputCapture(event);
+      }
     }
 
     async function resumeAudio() {
@@ -1252,8 +1587,11 @@
       canvas.addEventListener('pointermove', publishPointer);
       canvas.addEventListener('pointerdown', publishPointerButton);
       canvas.addEventListener('pointerup', publishPointerButton);
-      // Deliver the native menu click first. Capture is decided on the next
-      // animation frame, after the engine has changed menu/gameplay state.
+      canvas.addEventListener('pointercancel', clearPointerIntentGestures);
+      canvas.addEventListener('lostpointercapture', clearPointerIntentGestures);
+      // Native intent is evaluated synchronously by publishPointerButton.
+      // Retain a next-frame fallback for engines that publish state one frame
+      // after dispatch (although a browser may reject capture after activation).
       canvas.addEventListener('pointerup', captureAfterInteraction);
       canvas.addEventListener('pointerdown', resumeAudio, { passive: true });
       canvas.addEventListener('keydown', resumeAudio, { passive: true });
@@ -1368,6 +1706,8 @@
           canvas.removeEventListener('pointermove', publishPointer);
           canvas.removeEventListener('pointerdown', publishPointerButton);
           canvas.removeEventListener('pointerup', publishPointerButton);
+          canvas.removeEventListener('pointercancel', clearPointerIntentGestures);
+          canvas.removeEventListener('lostpointercapture', clearPointerIntentGestures);
           canvas.removeEventListener('pointerdown', resumeAudio);
           canvas.removeEventListener('keydown', resumeAudio);
         }
@@ -1380,7 +1720,7 @@
   }
 
   const api = Object.freeze({
-    version: '0.7.3',
+    version: '0.7.4',
     DISPLAY_MODES,
     ENGINE_STATES,
     validateAdapterContract,
@@ -1397,7 +1737,12 @@
     resolveDeployment,
     createDataCache,
     createOwnerDataSet,
+    normalizeDataValidatorDeclaration,
+    dataValidatorCacheTag,
+    createBoundedDataReader,
+    runDataValidator,
     validateOwnerFile,
+    ownerFileValidation,
     mountOwnerFiles,
     createContainerDataClient,
     createWakeClient

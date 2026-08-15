@@ -51,10 +51,11 @@ engine:
   cursor release, browser-shortcut boundaries, and desktop capability notice;
 - browser/platform capability detection and actionable unsupported-browser
   diagnostics;
-- validated owner-file caching in IndexedDB and durable-storage requests;
+- validated game-file caching in IndexedDB, downstream format-validator
+  modules with identical Node/browser semantics, and durable-storage requests;
 - first-run validated container provisioning into persistent `/data`, exact
   same-origin download allowlists, and automatic removal of setup UI afterward;
-- cache-first owner-data sets and read-only WORKERFS/chunked MEMFS mounting;
+- cache-first game-data sets and read-only WORKERFS/chunked MEMFS mounting;
 - save/config persistence and import/export boundaries;
 - audio gesture unlock, focus/device suspension recovery, and master controls;
 - loading progress, log/crash surfaces, retry, and WebGL context-loss recovery;
@@ -62,12 +63,13 @@ engine:
 - suite versus locked single-title deployments;
 - website-triggered server wake, status, random-map startup, human population,
   keep-alive, and idle shutdown contracts;
-- the versioned, retail-free static image base used by downstream games.
+- the versioned, data-free static image base used by downstream games.
 
-The framework never knows a retail filename, renderer command, game cvar,
-network protocol, or copyrighted asset. Cache policy versions are supplied by
-the engine/game layer; changing a policy version safely invalidates only that
-title's private records.
+The framework never knows a game archive format, title filename, renderer
+command, game cvar, or network protocol. It owns bounded file reads, digests,
+atomic installation, cache plumbing, and status/error handling. Downstream
+engine/game modules own format recognition and title policy. Validator module
+versions and policy are part of browser and server validation cache keys.
 
 ## Engine-family layer
 
@@ -79,8 +81,9 @@ network transport, and dedicated-server adapter. Examples are `idtech3-wasm`,
 
 ## Game layer
 
-A game adapter contains title policy: exact owner-file allowlist and validation,
-branding from owner-installed media, game defaults, SP/MP availability, launch
+A game adapter contains title policy: bounded game-file declarations and
+downstream validation,
+branding from installed media, game defaults, SP/MP availability, launch
 arguments, renderer profiles, map rotation, bot policy, and the smallest
 source patch that cannot honestly be shared by its engine siblings.
 
@@ -129,4 +132,4 @@ game never loads framework code from a third-party CDN.
 
 The Docker image builder uses a versioned `wasm-game-framework:<version>` base.
 Suite and title-locked images contain only their game site on top of that base;
-they never copy owner game data.
+they never copy game data.

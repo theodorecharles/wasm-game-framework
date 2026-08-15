@@ -1,0 +1,16 @@
+{
+  "namespace": "canonical-fixture",
+  "version": "v1",
+  "validator": {
+    "module": "/data-validator.mjs",
+    "version": "fixture-v1",
+    "maxReadBytes": 16
+  },
+  "files": [
+    {
+      "key": "fixture",
+      "name": "fixture.bin",
+      "maxSize": 64
+    }
+  ]
+}

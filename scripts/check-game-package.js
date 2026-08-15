@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { validateAdapterContract } = require('../dist/wasm-game-framework.js');
+const { normalizeManifestCollection } = require('../server/provisioning.js');
 
 function fail(message) {
   throw new Error(message);
@@ -95,6 +96,17 @@ function main() {
 
   for (const { key, config } of mergedVariants(rootConfig)) {
     checkConfig(siteRoot, key, config, adapterSource);
+  }
+  const dataManifestPath = path.join(siteRoot, 'wasm-game-data.json');
+  if (fs.existsSync(dataManifestPath)) {
+    const manifests = normalizeManifestCollection(readJson(dataManifestPath));
+    for (const [variant, manifest] of manifests) {
+      for (const policy of manifest.files) {
+        if (policy.validator && !fs.existsSync(publicFile(siteRoot, policy.validator.module))) {
+          fail(`${variant}/${policy.key}: data-validator module is missing: ${policy.validator.module}`);
+        }
+      }
+    }
   }
   console.log(`adapter package contract passed for ${mergedVariants(rootConfig).length} variant(s) in ${siteRoot}`);
 }

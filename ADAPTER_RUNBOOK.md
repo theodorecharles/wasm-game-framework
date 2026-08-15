@@ -141,18 +141,37 @@ not compete with the framework for browser capture.
 Browsers require a trusted click for the first pointer-lock request. Async
 JOIN, New Game, and Resume actions therefore need a native capture-intent bit:
 
-1. The native menu sets that bit synchronously while processing the trusted
-   button gesture.
-2. `readCaptureIntent()` returns true while the action is transitioning through
-   `loading` toward controllable play.
-3. `readEngineState()` continues to report the honest state (`loading`, then
-   `gameplay`).
-4. The framework reserves pointer lock from that gesture and retains it through
-   loading.
-5. The bit clears on failure, disconnect, cancellation, Escape, or any menu.
+1. `pointerButton(detail, event)` delivers the native menu action while the
+   browser's trusted pointer event is still active.
+2. At pointerdown, the framework snapshots `readCaptureIntent()` and tracks the
+   pointer ID and button. Intent already true at this point is stale and cannot
+   authorize this gesture.
+3. Native dispatch may raise intent while handling pointerdown, between events
+   on a native frame, or while handling the matching pointerup. Alternatively,
+   the adapter exposes a predeclared capture target for that exact JOIN/New
+   Game/Resume control. Do not infer intent from an arbitrary click.
+4. At matching pointerup, a false-to-true intent edge lets the framework call
+   `requestPointerLock()` on the same trusted event stack. Queued SDL work may
+   honestly leave `readEngineState()` at `menu` or `paused` for this callback.
+5. On the following native tick, state reports `loading` and then `gameplay`,
+   allowing the ordinary persistent capture rules to retain lock. The bit
+   clears on success, failure, disconnect, cancellation, or Escape. A failed
+   transition reports `menu`/`paused` again so capture is released.
 
-Never fake `gameplay` merely to obtain capture. Never capture while a main,
-pause, limbo, chat, console, scoreboard, or debrief cursor is active.
+Pointer ID/button mismatch, `pointercancel`, and `lostpointercapture` clear the
+gesture without authorization. The event-scoped exception never changes
+`captureDesired()`: outside the matching trusted pointerup, only `loading` with
+current intent or authoritative `gameplay` may capture or retain lock.
+
+The framework also checks again on the next animation frame for engines whose
+native transition becomes visible late. That is a compatibility fallback, not
+the primary request: Chrome may reject it because transient activation has
+already ended. Acceptance must prove the synchronous path. A delayed-only
+intent is not considered a working JOIN or Resume capture implementation.
+
+Never fake `gameplay` merely to obtain capture. Apart from the exact rising
+JOIN/New Game/Resume gesture above, never capture while a main, pause, limbo,
+chat, console, scoreboard, or debrief cursor is active.
 
 When capture is lost during gameplay, `captureLost()` must invoke exactly one
 native pause/menu action. Avoid a second legacy `pointerlockchange` listener
@@ -266,6 +285,16 @@ Use `context.dataClient.load()` with a versioned
 container remains the source; IndexedDB is the browser fast path. Once required
 data is ready, the normal launcher contains no setup or storage commentary.
 
+Put format and title recognition in a downstream `.mjs` validator referenced by
+`wasm-game-data.json`, never in the framework. The same pure module must run in
+Node and the browser. It receives `{ name, size, policy, read, digest }` and
+returns `{ accepted: true, identity?, version?, fingerprint?, metadata? }` or
+`{ accepted: false, error }`. Declare a finite `sizes` list or `maxSize`, an
+explicit validator `version`, and bounded read budgets. Root/variant validator
+defaults may be overridden per file; set `validator: false` for files that use
+only filename/size/magic/hash checks. Bump the validator version whenever its
+semantics change.
+
 Initialize save/config persistence before allowing play and flush it on native
 save events, visibility loss, and clean unload when practical. Do not persist
 read-only game archives into the save filesystem.
@@ -325,4 +354,3 @@ unreached behavior as passed because its adapter contains a plausible hook.
   asset lookups; test categories independently.
 - **Second launch freezes:** a second main loop was created or native shutdown
   did not complete.
-

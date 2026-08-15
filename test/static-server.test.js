@@ -42,6 +42,7 @@ async function waitFor(url) {
   await fsp.writeFile(path.join(site, 'index.html'), '<!doctype html><title>fixture</title>');
   await fsp.writeFile(path.join(site, 'background.bmp'), Buffer.from('BMfixture'));
   await fsp.writeFile(path.join(site, 'fixture.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  await fsp.copyFile(path.join(__dirname, 'fixtures', 'data-validator.mjs'), path.join(site, 'data-validator.mjs'));
   await fsp.writeFile(path.join(site, 'wasm-game.json'), JSON.stringify({
     id: 'fixture-suite', title: 'Fixture', defaultVariant: 'alpha', variants: {
       alpha: { title: 'Alpha Game', icon: '/fixture.svg', pwa: { shortName: 'Alpha', themeColor: '#123456', icons: [
@@ -54,7 +55,14 @@ async function waitFor(url) {
   await fsp.writeFile(path.join(site, 'wasm-game-data.json'), JSON.stringify({
     namespace: 'fixture-suite', version: 'v1', variants: {
       alpha: { files: [
-        { key: 'pak', name: 'pak0.pak', path: 'alpha/pak0.pak', size: pakA.length, magic: 'PACK', sha256: crypto.createHash('sha256').update(pakA).digest('hex') },
+        {
+          key: 'pak', name: 'pak0.pak', path: 'alpha/pak0.pak', size: pakA.length, magic: 'PACK',
+          sha256: crypto.createHash('sha256').update(pakA).digest('hex'),
+          validator: {
+            module: '/data-validator.mjs', export: 'validateFixture', version: 'fixture-validator-v2',
+            policy: { signature: 'PACKvariant-a', identity: 'alpha-pak' }, maxReadBytes: 16
+          }
+        },
         { key: 'music', name: 'music.ogg', path: 'alpha/music.ogg', size: optional.length, magic: 'OggS', required: false }
       ] },
       beta: { files: [
@@ -98,7 +106,7 @@ async function waitFor(url) {
     const workerResponse = await fetch(`${base}/service-worker.js`);
     assert.equal(workerResponse.headers.get('service-worker-allowed'), '/');
     const worker = await workerResponse.text();
-    assert.match(worker, /wasm-game-shell-0\.7\.3/);
+    assert.match(worker, /wasm-game-shell-0\.7\.4/);
     assert.match(worker, /fetch\(event\.request\)/, 'shell cache must refresh from the network before using its fallback');
     assert.doesNotMatch(worker, /game-data/, 'the service worker must not duplicate owner game-data caching');
     const noVariant = await (await fetch(`${base}/game-data/status`)).json();
@@ -107,15 +115,27 @@ async function waitFor(url) {
 
     let alpha = await (await fetch(`${base}/game-data/status?variant=alpha`)).json();
     assert.equal(alpha.ready, false);
-    let response = await fetch(`${base}/game-data/setup/pak?variant=alpha`, { method: 'PUT', body: pakA });
+    let response = await fetch(`${base}/game-data/setup/pak?variant=alpha`, {
+      method: 'PUT', body: Buffer.from('PACKvariant-z')
+    });
+    assert.equal(response.status, 422, 'downstream validator rejection must reach the setup response');
+    assert.match((await response.json()).error, /expected PACKvariant-a signature/);
+    alpha = await (await fetch(`${base}/game-data/status?variant=alpha`)).json();
+    assert.equal(alpha.ready, false, 'rejected uploads must not change readiness');
+    response = await fetch(`${base}/game-data/setup/pak?variant=alpha`, { method: 'PUT', body: pakA });
     assert.equal(response.status, 201);
+    const accepted = await response.json();
+    assert.equal(accepted.validation.identity, 'alpha-pak');
     alpha = await (await fetch(`${base}/game-data/status?variant=alpha`)).json();
     assert.equal(alpha.ready, true);
+    assert.equal(alpha.files.find(file => file.key === 'pak').validator.version, 'fixture-validator-v2');
+    assert.equal(alpha.files.find(file => file.key === 'pak').validation.identity, 'alpha-pak');
     assert.equal(alpha.files.find(file => file.key === 'music').valid, false);
     response = await fetch(`${base}/game-data/files/music?variant=alpha`);
     assert.equal(response.status, 404, 'missing optional data must fail promptly');
     response = await fetch(`${base}/game-data/setup/music?variant=alpha`, { method: 'PUT', body: optional });
     assert.equal(response.status, 201, 'optional data may be installed after required data is ready');
+    assert.equal('validation' in await response.json(), false, 'no-validator setup responses retain their legacy shape');
     response = await fetch(`${base}/game-data/files/music?variant=alpha`);
     assert.equal(response.status, 200);
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), optional);

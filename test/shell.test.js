@@ -110,9 +110,19 @@ assert.ok(
     sharedJs.indexOf("canvas.addEventListener('pointerup', captureAfterInteraction)"),
   'native pointer-up delivery must be registered before deferred capture evaluation'
 );
+assert.match(
+  sharedJs,
+  /function publishPointerButton\(event\)[\s\S]+config\.onPointerButton\?\.\(detail, event\);[\s\S]+event\.type === 'pointerup'[\s\S]+refreshAuthoritativeState\(\);[\s\S]+if \(captureDesired\(\)\) requestInputCapture\(event\);/,
+  'pointer-up must expose native state and request capture before trusted activation ends'
+);
+assert.match(
+  sharedJs,
+  /const intentBefore = readCaptureIntent\(\);[\s\S]+pointerIntentGestures\.set\(gestureKey,[\s\S]+const trackedGesture = event\.type === 'pointerup'[\s\S]+const eventScopedIntent = Boolean\(trackedGesture && !trackedGesture\.intentBefore && intentAfter\);[\s\S]+trustedIntentEvent = event;[\s\S]+requestInputCapture\(event, \{ trustedIntent: true \}\)/,
+  'only intent that rises during this exact pointerdown-to-pointerup gesture may bypass persistent state gating'
+);
 assert.match(sharedJs, /captureFrame = requestAnimationFrame\(\(\) => \{/,
-  'capture must be evaluated after the native engine receives a frame');
-assert.match(sharedJs, /engineState !== ENGINE_STATES\.LOADING \|\| typeof config\.readCaptureIntent !== 'function'/,
+  'next-frame capture evaluation must remain as a compatibility fallback');
+assert.match(sharedJs, /return engineState === ENGINE_STATES\.LOADING && readCaptureIntent\(\)/,
   'loading capture intent must be separate from the authoritative gameplay state');
 assert.match(sharedJs, /if \(captureDesired\(\)\) requestInputCapture\(event\)/,
   'a trusted menu gesture must honor synchronous launch capture intent');

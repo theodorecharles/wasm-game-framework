@@ -27,7 +27,9 @@ try {
 let stores = new Map();
 try {
   const manifests = normalizeManifestCollection(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
-  stores = new Map(Array.from(manifests, ([key, manifest]) => [key, createProvisioningStore({ dataRoot, manifest })]));
+  stores = new Map(Array.from(manifests, ([key, manifest]) => [key, createProvisioningStore({
+    dataRoot, manifest, validatorRoot: siteRoot
+  })]));
 } catch (error) {
   if (error.code !== 'ENOENT') throw error;
 }
@@ -194,7 +196,10 @@ const server = http.createServer(async (request, response) => {
       if (!store) return json(response, 404, { error: 'No game-data policy is installed.' });
       if (!authorized(request)) return json(response, 401, { error: 'The setup token is required.' });
       const result = await store.acceptUpload(setup[1], request);
-      return json(response, 201, { ok: true, key: setup[1], size: result.size });
+      return json(response, 201, {
+        ok: true, key: setup[1], size: result.size,
+        ...(result.validation ? { validation: result.validation } : {})
+      });
     }
     const data = /^\/game-data\/files\/([a-z0-9._-]+)$/.exec(url.pathname);
     if (data && (request.method === 'GET' || request.method === 'HEAD')) {
