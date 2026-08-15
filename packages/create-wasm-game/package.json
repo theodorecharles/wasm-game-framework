@@ -1,0 +1,26 @@
+{
+  "name": "create-wasm-game",
+  "version": "0.9.6",
+  "description": "Scaffold a WASM Game Framework project: manifest, adapter, pin, Docker, and contract tests",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theodorecharles/wasm-game-framework.git",
+    "directory": "packages/create-wasm-game"
+  },
+  "bin": {
+    "create-wasm-game": "bin/create-wasm-game.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "framework",
+    "scripts"
+  ],
+  "scripts": {
+    "prepack": "node ./scripts/sync-framework-snapshot.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

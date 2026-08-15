@@ -8,6 +8,13 @@ application.
 
 Current release: **0.9.6**
 
+Documentation: [theodorecharles.github.io/wasm-game-framework](https://theodorecharles.github.io/wasm-game-framework/)
+
+```bash
+npx create-wasm-game my-game
+npm create wasm-game@latest my-game
+```
+
 Version 0.9.6 restores large browser media libraries with bounded parallel
 HTTP and IndexedDB work instead of serializing thousands of files. Version
 0.9.5 added bounded, downstream-owned media transformation so a launch card can
