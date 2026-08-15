@@ -47,6 +47,8 @@ assert.match(bootstrap, /createContainerDataClient\(\{ variant/);
 assert.match(bootstrap, /dataClient\.media\.upload/);
 assert.match(bootstrap, /library\.minimumEntries > 0 && !library\.selectedId/,
   'an optional zero-entry media library must not disable Play');
+assert.match(bootstrap, /mediaLibraryLauncherVisible\(library\)/,
+  'the canonical launcher must honor ready-only media-library visibility policy');
 assert.match(framework, /runMediaBundleValidator/);
 assert.match(bootstrap, /createPersistenceManager\(/,
   'the canonical bootstrap must expose variant-scoped save and configuration persistence');

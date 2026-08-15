@@ -33,9 +33,13 @@ function source(value) {
   const normalized = normalizeMediaLibrary(manifest);
   assert.equal(normalized.namespace, 'fixture-media');
   assert.equal(normalized.minimumEntries, 1);
+  assert.equal(normalized.launcherVisibleWhenReady, true,
+    'ROM-style libraries keep the selector visible by default');
+  assert.equal(normalizeMediaLibrary({ ...manifest, launcherVisibleWhenReady: false }).launcherVisibleWhenReady, false);
   const store = createMediaLibraryStore({ dataRoot, validatorRoot: siteRoot, manifest });
 
   assert.equal((await store.status()).ready, false);
+  assert.equal((await store.status()).launcherVisibleWhenReady, true);
   const upload = await store.beginUpload({ files: [
     { name: 'game.cue', size: 16 }, { name: 'track01.bin', size: 5 }
   ] });

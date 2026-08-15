@@ -64,6 +64,7 @@ function normalizeMediaLibrary(value, defaults) {
     version,
     path: safeRelative(value.path || `media/${namespace}`),
     minimumEntries: boundedInteger(value.minimumEntries, 0, 0, 100000, 'minimumEntries'),
+    launcherVisibleWhenReady: value.launcherVisibleWhenReady !== false,
     maxEntries: boundedInteger(value.maxEntries, 512, 1, 100000, 'maxEntries'),
     maxFilesPerEntry: boundedInteger(value.maxFilesPerEntry, 256, 1, 4096, 'maxFilesPerEntry'),
     maxFileBytes: boundedInteger(value.maxFileBytes, 16 * 1024 * 1024 * 1024, 1, 64 * 1024 * 1024 * 1024, 'maxFileBytes'),
@@ -232,6 +233,7 @@ function createMediaLibraryStore(options) {
       version: manifest.version,
       ready: entries.length >= manifest.minimumEntries,
       minimumEntries: manifest.minimumEntries,
+      launcherVisibleWhenReady: manifest.launcherVisibleWhenReady,
       entries,
       limits: Object.freeze({
         maxEntries: manifest.maxEntries,

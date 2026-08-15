@@ -42,7 +42,7 @@ async function waitFor(url) {
     namespace: 'media-fixture', version: 'v1', files: [],
     mediaLibrary: {
       minimumEntries: 1, maxFilesPerEntry: 3, maxFileBytes: 64, maxEntryBytes: 128,
-      maxBrowserCacheBytes: 128, publicMetadata: ['kind'],
+      maxBrowserCacheBytes: 128, publicMetadata: ['kind'], launcherVisibleWhenReady: false,
       validator: {
         module: '/data-validator.mjs', export: 'validateMediaFixture', version: 'media-fixture-v1',
         policy: { primary: 'game.cue', requiredFiles: ['track.bin'], signature: 'MEDIA', kind: 'disc' },
@@ -64,6 +64,8 @@ async function waitFor(url) {
     assert.equal(status.fixedReady, true);
     assert.equal(status.ready, false);
     assert.equal(status.mediaLibrary.entries.length, 0);
+    assert.equal(status.mediaLibrary.launcherVisibleWhenReady, false,
+      'the launcher policy must be present before provisioning completes');
 
     let response = await fetch(`${base}/game-data/media/uploads`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -92,6 +94,8 @@ async function waitFor(url) {
     status = await (await fetch(`${base}/game-data/status`)).json();
     assert.equal(status.ready, true);
     assert.equal(status.mediaLibrary.entries[0].id, entry.id);
+    assert.equal(status.mediaLibrary.launcherVisibleWhenReady, false,
+      'the launcher policy must survive the ready transition');
     const detail = await (await fetch(`${base}/game-data/media/entries/${entry.id}`)).json();
     assert.equal(detail.files.length, 2);
     const track = detail.files.find(file => file.name === 'track.bin');

@@ -6,7 +6,7 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.9.1**
+Current release: **0.9.2**
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -22,7 +22,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.9.1
+./scripts/build-base-image.sh wasm-game-framework:0.9.2
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -52,6 +52,12 @@ selected-entry-only browser cache. A downstream pure `.mjs` validator owns all
 format knowledge and executes unchanged in Node and the browser. Existing
 `files`, `status()`, `provision()`, `load()`, and `applyGate()` APIs remain
 compatible.
+
+Storage durability is best-effort and bounded. Browsers may reject, omit, or
+leave `navigator.storage.persist()` pending while waiting on permission UI;
+none of those outcomes can block media loading or native startup. IndexedDB
+caching and IDBFS persistence continue normally even when durable quota is not
+granted.
 
 The enforced dependency direction is documented in [ARCHITECTURE.md](ARCHITECTURE.md):
 framework behavior flows into an engine-family adapter, then into a small game
@@ -159,6 +165,7 @@ A media-library declaration is format-neutral:
   "files": [],
   "mediaLibrary": {
     "minimumEntries": 1,
+    "launcherVisibleWhenReady": true,
     "maxFilesPerEntry": 64,
     "maxFileBytes": 2147483648,
     "maxEntryBytes": 4294967296,
@@ -175,6 +182,11 @@ A media-library declaration is format-neutral:
   }
 }
 ```
+
+`launcherVisibleWhenReady` defaults to `true`, which keeps a ROM or disc
+library selectable after startup. Set it to `false` for a single-install media
+flow: the selector and Add-media controls remain available while provisioning
+is incomplete, then disappear once the required entry is ready.
 
 The shared browser client exposes `dataClient.media.status()`, `selected()`,
 `select(id, library)`, `upload(files, options)`, `detail(id)`, and

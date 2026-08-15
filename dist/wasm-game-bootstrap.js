@@ -212,7 +212,7 @@
   async function refreshDataGate() {
     const state = await dataClient.applyGate();
     const library = state.mediaLibrary;
-    elements.mediaLibrary.hidden = !library?.configured;
+    elements.mediaLibrary.hidden = !WasmGameFramework.mediaLibraryLauncherVisible(library);
     if (library?.configured) {
       const entries = library.entries.map(entry => ({ value: entry.id, label: entry.label }));
       if (!entries.length) entries.push({ value: '', label: 'No media installed' });

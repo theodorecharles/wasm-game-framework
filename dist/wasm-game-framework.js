@@ -754,7 +754,7 @@
           attachLifecycle();
           publish();
           if (config.requestDurability !== false) {
-            try { globalThis.navigator?.storage?.persist?.().catch?.(() => undefined); } catch (_) {}
+            void requestStorageDurability({ timeoutMs: config.durabilityTimeoutMs });
           }
           return true;
         } catch (error) {
@@ -849,6 +849,44 @@
         window.removeEventListener('unhandledrejection', onRejection);
       }
     });
+  }
+
+  const DEFAULT_DURABILITY_TIMEOUT_MS = 1500;
+
+  async function settleBrowserStorageOperation(operation, timeoutMs) {
+    let timer = 0;
+    const bounded = new Promise(resolve => {
+      timer = setTimeout(() => resolve(Object.freeze({ settled: false, value: undefined })), timeoutMs);
+    });
+    const invoked = Promise.resolve().then(operation).then(
+      value => Object.freeze({ settled: true, value }),
+      () => Object.freeze({ settled: true, value: undefined })
+    );
+    try {
+      return await Promise.race([invoked, bounded]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async function requestStorageDurability(options) {
+    const config = options || {};
+    const storage = config.storage === undefined ? globalThis.navigator?.storage : config.storage;
+    if (!storage) return false;
+    const requestedTimeout = Number(config.timeoutMs);
+    const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout >= 0
+      ? requestedTimeout : DEFAULT_DURABILITY_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
+    const remaining = () => Math.max(0, deadline - Date.now());
+
+    if (typeof storage.persisted === 'function') {
+      const known = await settleBrowserStorageOperation(() => storage.persisted(), remaining());
+      if (!known.settled) return false;
+      if (known.value === true) return true;
+    }
+    if (typeof storage.persist !== 'function') return false;
+    const requested = await settleBrowserStorageOperation(() => storage.persist(), remaining());
+    return requested.settled && requested.value === true;
   }
 
   const memoryDataCaches = new Map();
@@ -1036,12 +1074,14 @@
     async function persist() {
       const storage = globalThis.navigator && globalThis.navigator.storage;
       if (!storage) return { persisted: false, estimate: null };
-      let persisted = await storage.persisted?.() || false;
-      if (!persisted && storage.persist) {
-        try { persisted = await storage.persist(); } catch (_) {}
-      }
+      const timeoutMs = Number.isFinite(Number(config.durabilityTimeoutMs))
+        ? Math.max(0, Number(config.durabilityTimeoutMs)) : DEFAULT_DURABILITY_TIMEOUT_MS;
+      const persisted = await requestStorageDurability({ storage, timeoutMs });
       let estimate = null;
-      try { estimate = await storage.estimate?.() || null; } catch (_) {}
+      if (typeof storage.estimate === 'function') {
+        const measured = await settleBrowserStorageOperation(() => storage.estimate(), timeoutMs);
+        if (measured.settled) estimate = measured.value || null;
+      }
       return { persisted, estimate };
     }
 
@@ -1304,6 +1344,11 @@
       throw new Error(`Invalid media-bundle path: ${value}`);
     }
     return segments.join('/');
+  }
+
+  function mediaLibraryLauncherVisible(library) {
+    return Boolean(library?.configured &&
+      !(library.ready === true && library.launcherVisibleWhenReady === false));
   }
 
   function normalizeMediaBundleValidatorResult(value, fileNames) {
@@ -2658,7 +2703,7 @@
   }
 
   const api = Object.freeze({
-    version: '0.9.1',
+    version: '0.9.2',
     DISPLAY_MODES,
     ENGINE_STATES,
     CONTROLLER_MODES,
@@ -2678,6 +2723,7 @@
     createPersistenceManager,
     resolvePersistenceRoot,
     createDiagnostics,
+    requestStorageDurability,
     resolveDeployment,
     createDataCache,
     createOwnerDataSet,
@@ -2687,6 +2733,7 @@
     runDataValidator,
     runMediaBundleValidator,
     normalizeMediaRelativeName,
+    mediaLibraryLauncherVisible,
     validateOwnerFile,
     ownerFileValidation,
     mountOwnerFiles,

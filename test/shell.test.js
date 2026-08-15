@@ -16,6 +16,7 @@ const {
   createOwnerDataSet,
   createContainerDataClient,
   createPasswordClient,
+  mediaLibraryLauncherVisible,
   validateOwnerFile,
   mountOwnerFiles
 } = require('../dist/wasm-game-framework.js');
@@ -29,6 +30,13 @@ assert.equal(
 
 assert.equal(typeof createContainerDataClient, 'function');
 assert.equal(typeof createPasswordClient, 'function');
+assert.equal(mediaLibraryLauncherVisible({ configured: true, ready: false, launcherVisibleWhenReady: false }), true,
+  'single-install media provisioning stays visible until ready');
+assert.equal(mediaLibraryLauncherVisible({ configured: true, ready: true, launcherVisibleWhenReady: false }), false,
+  'single-install media controls hide after readiness');
+assert.equal(mediaLibraryLauncherVisible({ configured: true, ready: true }), true,
+  'ROM libraries retain the current visible launcher UI by default');
+assert.equal(mediaLibraryLauncherVisible(null), false);
 assert.equal(typeof detectCapabilities, 'function');
 assert.equal(typeof requireCapabilities, 'function');
 assert.equal(typeof createQualityController, 'function');
