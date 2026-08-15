@@ -480,13 +480,13 @@ link rather than deleted.
 
 | Engine family | Games | Status | Current repositories |
 | --- | --- | --- | --- |
-| id Tech 1 | Doom, Doom II, TNT, Plutonia, Heretic, Hexen, Strife, Chex Quest | **Still in development** | [idtech1-wasm](https://github.com/theodorecharles/idtech1-wasm) |
+| id Tech 1 | Doom, Doom II, TNT, Plutonia, Heretic, Hexen, Chex Quest | **Still in development** | [idtech1-wasm](https://github.com/theodorecharles/idtech1-wasm) |
 | id Tech 2 | Quake, Quake II | **Still in development** | [idtech2-wasm](https://github.com/theodorecharles/idtech2-wasm) |
 | id Tech 3 | Quake III Arena, Return to Castle Wolfenstein | **Still in development** | [idtech3-wasm](https://github.com/theodorecharles/idtech3-wasm) |
 | id Tech 3 | Wolfenstein: Enemy Territory | **Live** | [idtech3-wasm](https://github.com/theodorecharles/idtech3-wasm), [wolfet-wasm](https://github.com/theodorecharles/wolfet-wasm), [live deployment](https://wolfet.tedcharles.net/) |
-| id Tech 4 | Doom 3, Resurrection of Evil, Quake 4 | **Still in development** | [idtech4-wasm](https://github.com/theodorecharles/idtech4-wasm) |
+| id Tech 4 | Doom 3, Resurrection of Evil, Quake 4, Prey (2006) | **Still in development** | [idtech4-wasm](https://github.com/theodorecharles/idtech4-wasm) |
 | Build | Blood, Duke Nukem 3D | **Still in development** | [build-wasm](https://github.com/theodorecharles/build-wasm) |
 | GoldSource | Half-Life, Opposing Force, Blue Shift, Counter-Strike | **Still in development** | [goldsource-wasm](https://github.com/theodorecharles/goldsource-wasm) |
 | Source | Half-Life 2 | **Still in development** | [source-wasm](https://github.com/theodorecharles/source-wasm) |
 | Wolf3D | Wolfenstein 3D, Spear of Destiny | **Still in development** | [wolf3d-wasm](https://github.com/theodorecharles/wolf3d-wasm) |
-| DOSBox | Jill of the Jungle and future DOS titles | **Still in development** | [dosbox-wasm](https://github.com/theodorecharles/dosbox-wasm) |
+| DOSBox | Jill of the Jungle 1–3, Jazz Jackrabbit, Duke Nukem 1–2, Grand Theft Auto DOS Demo, The Need for Speed, SimCity 2000 | **Still in development** | [dosbox-wasm](https://github.com/theodorecharles/dosbox-wasm) |
