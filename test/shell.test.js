@@ -9,6 +9,8 @@ const {
   requireCapabilities,
   createQualityController,
   createPersistentFs,
+  createPersistenceManager,
+  createControllerManager,
   createDiagnostics,
   createDataCache,
   createOwnerDataSet,
@@ -31,12 +33,14 @@ assert.equal(typeof detectCapabilities, 'function');
 assert.equal(typeof requireCapabilities, 'function');
 assert.equal(typeof createQualityController, 'function');
 assert.equal(typeof createPersistentFs, 'function');
+assert.equal(typeof createPersistenceManager, 'function');
+assert.equal(typeof createControllerManager, 'function');
 assert.equal(typeof createDiagnostics, 'function');
 assert.equal(typeof require('../dist/wasm-game-framework.js').validateAdapterContract, 'function');
 
 const { validateAdapterContract } = require('../dist/wasm-game-framework.js');
 assert.deepEqual(validateAdapterContract({ pointerLock: false }, { start() {} }), {
-  valid: true, nativeResize: false, absolutePointer: false, pointerCapture: false
+  valid: true, nativeResize: false, absolutePointer: false, pointerCapture: false, controllerMode: 'disabled'
 });
 assert.throws(
   () => validateAdapterContract({ nativeManaged: true, pointerLock: false }, { start() {} }),
@@ -49,6 +53,10 @@ assert.throws(
 assert.throws(
   () => validateAdapterContract({ pointerLock: true }, { start() {}, readEngineState() {} }),
   /captureLost\(\).*pointer-lock loss/
+);
+assert.throws(
+  () => validateAdapterContract({ pointerLock: false, controller: { mode: 'wasdMouse' } }, { start() {} }),
+  /controllerFrame\(\).*wasdMouse[\s\S]*controllerChanged\(\)/
 );
 
 assert.deepEqual(fitRect(1920, 1080, 4 / 3, 'contain'), { width: 1440, height: 1080 });

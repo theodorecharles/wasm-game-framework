@@ -1,12 +1,12 @@
 # WASM Game Framework
 
-This repository is the single launcher, loading-surface, controls, viewport,
-game-data, PWA, and container-lifecycle contract used by a portfolio of native
+This repository is the single launcher, loading-surface, controls, controller,
+save/config persistence, viewport, game-data, PWA, and container-lifecycle contract used by a portfolio of native
 game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.7.6**
+Current release: **0.8.0**
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -22,7 +22,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.7.6
+./scripts/build-base-image.sh wasm-game-framework:0.8.0
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -103,6 +103,18 @@ The declarative boundary looks like this:
   },
   "displayMode": "dynamic",
   "nativeManaged": true,
+  "controller": {
+    "mode": "wasdMouse",
+    "label": "WASD + mouse mapping",
+    "moveDeadzone": 0.18,
+    "lookDeadzone": 0.14
+  },
+  "persistence": {
+    "root": "/save/{variant}",
+    "debounceMs": 750,
+    "intervalMs": 5000,
+    "requestDurability": true
+  },
   "identity": true,
   "graphics": true,
   "profiles": [
@@ -123,6 +135,8 @@ globalThis.WasmGameAdapter = {
   readEngineState(context) { return 'menu'; },
   readCaptureIntent(context) { return false; },
   resize(detail, context) {},
+  controllerFrame(detail, context) {},
+  controllerChanged(detail, context) {},
   captureLost(detail, context) {}
 };
 ```
@@ -200,13 +214,78 @@ Widescreen renderers whose native UI remains centered at a fixed aspect set
 pillarbox offset before converting into native menu coordinates.
 
 `createPreferences()` owns persistent player name, quality profile, dynamic
-quality, target-FPS, and “Launch fullscreen” controls. Fullscreen is requested
+quality, target-FPS, controller selection, and “Launch fullscreen” controls. Fullscreen is requested
 directly from the Play click so browser user-activation rules are satisfied;
 set `fullscreen: false` only for a title that cannot support it, or
 `defaultFullscreen: true` when fullscreen should start checked. The common selectors are
 `data-shell-player-name`, `data-shell-quality-profile`,
 `data-shell-dynamic-quality`, and `data-shell-target-fps`. The shell also adds
 a compact “best on desktop” notice for small/coarse-pointer devices.
+
+## Controller input
+
+Controller discovery and selection happen on the shared launch card. The
+framework uses the browser Gamepad API, recognizes USB and Bluetooth devices,
+survives connection changes, remembers a stable device identity instead of a
+transient Gamepad index, polls on animation frames, and exposes optional
+dual-rumble output. A controller becomes available after the browser reports
+it; users normally press any button once after pairing it with the operating
+system.
+
+Every game explicitly declares one controller mode:
+
+- `disabled` hides controller controls and performs no polling;
+- `wasdMouse` provides common left-stick movement, right-stick look, trigger,
+  face-button, shoulder, menu, and scoreboard actions;
+- `custom` provides immutable raw axes/buttons so the adapter can implement a
+  console pad, steering wheel, flight controls, or another native mapping.
+
+The framework does not dispatch synthetic DOM keyboard or mouse events. A
+controller-enabled adapter implements `controllerFrame(detail, context)` and
+writes common actions or raw values into its native input queue. Button/axis
+to key, mouse axis/button, or emulator-pad mappings live in that adapter.
+Optional `controllerChanged()` handles device-specific setup, and
+`context.shell.controller.rumble()` exposes supported haptics.
+
+## Saves, configs, and keybindings
+
+Validated game archives and writable player state are separate. Game archives
+remain read-only; saves, save RAM, memory cards, configuration files,
+keybindings, screenshots, and recorded demos live under a variant-scoped
+IDBFS mount backed by IndexedDB.
+
+The manifest explicitly declares `persistence: false` or a writable virtual
+root. A persistence-enabled adapter restores that mount before native startup:
+
+```js
+async start(context) {
+  const module = await createNativeModule({ noInitialRun: true });
+  const saves = await context.persistence.attach(module.FS, {
+    root: context.persistence.root
+  });
+  // syncfs(true) has completed here. Native config loading is now safe.
+  module.callMain(['+set', 'fs_homepath', saves.root]);
+}
+```
+
+The framework serializes IDBFS operations, requests durable browser storage,
+flushes periodically, debounces explicit `markDirty()` notifications, and
+flushes on visibility loss and page exit. Adapters call
+`context.persistence.markDirty()` after a native save/config write and may
+`await context.persistence.save()` at high-value boundaries such as a manual
+save, map completion, or settings confirmation. Browser-local writable state
+is namespaced by game variant so suite images cannot mix saves or keybindings.
+Use `{variant}` or `{namespace}` in the manifest root. The bootstrap resolves
+the template before the adapter sees `context.persistence.root`, and the
+package checker rejects two suite variants that resolve to the same IDBFS
+mount path.
+
+For a worker-hosted engine, send only `context.persistence.namespace` and
+`context.persistence.root` to the worker. The worker imports the same released
+`wasm-game-framework.js`, creates its own `createPersistenceManager()` with
+those values, attaches the worker-local Module FS, waits for restore, and only
+then calls native main. An Emscripten FS object is not structured-cloneable and
+must never be passed through `postMessage()`.
 
 Game data is installed separately from this package.
 

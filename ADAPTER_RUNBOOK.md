@@ -61,6 +61,17 @@ a representative dynamic renderer:
   "pointerFit": "contain",
   "pointerLock": true,
   "fullscreen": true,
+  "controller": {
+    "mode": "wasdMouse",
+    "moveDeadzone": 0.18,
+    "lookDeadzone": 0.14
+  },
+  "persistence": {
+    "root": "/save/{variant}",
+    "debounceMs": 750,
+    "intervalMs": 5000,
+    "requestDurability": true
+  },
   "identity": true,
   "graphics": true,
   "adapter": "/game-adapter.js"
@@ -90,6 +101,8 @@ globalThis.WasmGameAdapter = Object.freeze({
   resize(detail, context) {},
   pointerMove(detail, event, context) {},
   pointerButton(detail, event, context) {},
+  controllerFrame(detail, context) {},
+  controllerChanged(detail, context) {},
   preferencesChanged(values, context) {},
   inputCaptureChanged(captured, context) {},
   captureLost(detail, context) {},
@@ -104,6 +117,8 @@ requires:
 - `resize()` when `nativeManaged` is true;
 - `pointerMove()` and `pointerButton()` when a native pointer space is declared;
 - `readEngineState()` and `captureLost()` when pointer lock is enabled.
+- `controllerFrame()` and `controllerChanged()` when controller mode is
+  `wasdMouse` or `custom`.
 
 `init()` loads policy and installs native callbacks without starting the game.
 `start()` consumes the already-saved preferences, restores validated data,
@@ -285,7 +300,47 @@ overwrite them. Do not make vertical mouse look available in games whose
 original gameplay has no vertical aiming unless that profile explicitly adds
 it.
 
-## 9. Data, persistence, audio, and recovery
+## 9. Map controllers through the native input seam
+
+The manifest explicitly declares `controller.mode` as `disabled`, `wasdMouse`,
+or `custom`. Omitted controller policy is a package error. Disabled games hide
+the launch-card field and do not poll. The other modes let the user select
+Disabled, Auto-detect, or a connected USB/Bluetooth controller on the launch
+card. The framework remembers a stable device identity; never persist a raw
+Gamepad index because indices change after reconnect and reload.
+
+`controllerFrame(detail, context)` receives one immutable frame per animation
+frame while a selected device is active. `detail.gamepad` contains normalized
+raw axes and button values; `detail.timestamp` and bounded `detail.deltaMs`
+allow frame-rate-independent analog look. In `wasdMouse` mode `detail.actions` additionally
+contains movement, look, attack, alt-attack, jump, crouch, reload, weapon,
+shoulder, scoreboard, menu, sprint, and melee values. In `custom` mode actions
+are null and the adapter maps raw controls itself.
+
+The mapping belongs in the engine/game adapter. Write controller values into
+the same native input queue used by real keyboard/mouse or emulator pad state.
+Do not dispatch synthetic DOM keyboard/mouse events; they are untrusted, lose
+held-state semantics, and frequently bypass Emscripten/SDL listeners. For a
+Quake-style adapter, translate left-stick actions into its WASD key state and
+right-stick values into native relative mouse deltas. A console adapter maps
+the same raw frame into its virtual d-pad, face buttons, shoulders, triggers,
+and sticks.
+
+Apply deadzones and look sensitivity once. The framework supplies declared
+common deadzones for `wasdMouse`; do not apply a second radial/axial deadzone in
+the adapter. Custom adapters own their complete transform. Release all native
+held actions when the controller is disabled or disconnected. Use
+`controllerChanged()` for that edge, and call
+`context.shell.controller.rumble()` only when the native game requests an
+effect.
+
+Acceptance must cover USB or Bluetooth connection on the launch card,
+hot-unplug with no stuck actions, remembered Auto/device selection, analog
+movement and look, every declared button, pause/menu navigation, returning to
+gameplay, and disabled mode. Controller input does not alter the framework's
+authoritative menu/gameplay capture rules.
+
+## 10. Data, persistence, audio, and recovery
 
 Use `context.dataClient.load()` with a versioned
 `createOwnerDataSet()`/game-data set and mount only validated entries. The
@@ -302,9 +357,46 @@ defaults may be overridden per file; set `validator: false` for files that use
 only filename/size/magic/hash checks. Bump the validator version whenever its
 semantics change.
 
-Initialize save/config persistence before allowing play and flush it on native
-save events, visibility loss, and clean unload when practical. Do not persist
-read-only game archives into the save filesystem.
+Every manifest explicitly declares `persistence: false` or a persistence
+object with an absolute traversal-free `root`. Omitted persistence policy is a
+package error. `false` is reserved for a runtime that genuinely has no writable
+state; it is not a shortcut for an unfinished adapter.
+
+Use `{variant}` or `{namespace}` in suite roots. The canonical bootstrap
+resolves the template and exposes the final path as `context.persistence.root`.
+Because Emscripten IDBFS keys storage by mount point, the package checker rejects
+two suite variants that resolve to the same root.
+
+Create the native Module with `noInitialRun`, then restore persistence before
+`callMain()` or any native config/save lookup:
+
+```js
+const module = await createModule({ noInitialRun: true });
+const persistent = await context.persistence.attach(module.FS, {
+  root: context.persistence.root
+});
+module.callMain(nativeArgumentsUsing(persistent.root));
+```
+
+For an engine whose Emscripten FS exists in a dedicated worker, post the
+resolved `context.persistence.namespace` and `.root` to that worker. Import
+the identical released framework there, construct a worker-local persistence
+manager, attach the worker Module FS, await restore, and then call native main.
+Do not attempt to structured-clone an FS object or claim main-thread
+persistence for a worker-only filesystem.
+
+Point the engine's home/config/save directory at that exact mount. Save files,
+configuration, keybindings, screenshots, demos, save RAM, and memory cards are
+writable state. Game archives remain on their separate read-only mount. Call
+`context.persistence.markDirty()` after native save/config events and
+`await context.persistence.save()` after high-value operations. The framework
+also performs serialized periodic, visibility-hidden, pagehide, and unload
+flushes, but periodic fallback does not excuse a missing native save hook.
+
+Hard-refresh acceptance must prove the engine restores an actual changed
+keybinding/config value and a real save or memory-card state before its native
+main reads them. Verify variant namespaces do not collide and that clearing
+the game-data cache does not erase saves (or vice versa).
 
 Resume audio from framework user-gesture events. Verify music, positional
 effects, weapons, enemies, UI sounds, focus loss, and resume independently;
@@ -315,7 +407,7 @@ recoverable diagnostic. `contextRestored()` must rebuild renderer resources or
 perform a native renderer restart. A fatal native error reports `crashed` and
 must not leave capture active.
 
-## 10. Required acceptance pass
+## 11. Required acceptance pass
 
 Run static tests, a production Docker image, and a real Chromium-family browser.
 Firefox is a useful second implementation check but does not replace Chromium.
@@ -332,18 +424,20 @@ For every runnable variant record evidence for:
 7. automatic capture, WASD, relative mouse, Escape release, and Resume capture;
 8. console/chat/debrief input where the game provides it;
 9. representative level rendering and audio categories;
-10. save/config persistence and hard refresh;
-11. PWA manifest, icons, service worker, and install metadata;
-12. `/data` and `/local-data` inaccessible while allowlisted game-data routes
+10. controller connect/select, movement/look/buttons, disconnect release, and
+    disabled mode when controller support is declared;
+11. a real save plus changed config/keybinding surviving hard refresh;
+12. PWA manifest, icons, service worker, and install metadata;
+13. `/data` and `/local-data` inaccessible while allowlisted game-data routes
     work;
-13. no downstream-authored document, CSS, service worker, or web manifest;
-14. no game archives or generated WASM/data artifacts tracked in Git.
+14. no downstream-authored document, CSS, service worker, or web manifest;
+15. no game archives or generated WASM/data artifacts tracked in Git.
 
 For an engine that cannot yet reach gameplay, execute every item reachable at
 its honest milestone and document the exact native blocker. Do not mark an
 unreached behavior as passed because its adapter contains a plausible hook.
 
-## 11. Common failure signatures
+## 12. Common failure signatures
 
 - **Name becomes Player:** native config loaded after startup arguments; reapply
   identity immediately before connection.

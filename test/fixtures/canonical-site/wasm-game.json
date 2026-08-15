@@ -11,6 +11,8 @@
   "graphics": false,
   "identity": false,
   "fullscreen": true,
+  "controller": { "mode": "wasdMouse" },
+  "persistence": false,
   "pwa": {
     "name": "Framework Fixture",
     "shortName": "Fixture",

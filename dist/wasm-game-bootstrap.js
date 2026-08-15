@@ -12,6 +12,8 @@
     passwordRow: byId('password-row'), password: byId('game-password'), unlock: byId('unlock'),
     identityRow: byId('identity-row'),
     playerName: byId('player-name'), advanced: byId('advanced-settings'), graphicsRow: byId('graphics-row'),
+    controllerRow: byId('controller-row'), controllerSelect: byId('game-controller'),
+    controllerMode: byId('controller-mode'), controllerStatus: byId('controller-status'),
     graphicsProfile: byId('graphics-profile'), fpsRow: byId('fps-row'), fpsTarget: byId('fps-target'),
     dynamicRow: byId('dynamic-row'), dynamicQuality: byId('dynamic-quality'), play: byId('play'),
     fullscreenRow: byId('fullscreen-row'), launchFullscreen: byId('launch-fullscreen'),
@@ -26,6 +28,7 @@
   let variant;
   let shell;
   let dataClient;
+  let persistence;
   let passwordClient;
   let adapter;
   let initialized = false;
@@ -106,6 +109,18 @@
       favicon.href = iconUrl;
     }
     elements.identityRow.hidden = config.identity === false;
+    const controllerMode = WasmGameFramework.normalizeControllerMode(config.controller);
+    if (!controllerMode) throw new Error('Controller mode must be disabled, wasdMouse, or custom.');
+    elements.controllerRow.hidden = controllerMode === 'disabled';
+    if (controllerMode !== 'disabled') {
+      options(elements.controllerSelect, [
+        { value: 'disabled', label: 'Disabled' },
+        { value: 'auto', label: 'Auto-detect' }
+      ], config.defaultController || 'auto');
+      text(elements.controllerMode, config.controller?.label ||
+        (controllerMode === 'wasdMouse' ? 'WASD + mouse mapping' : 'Game-specific mapping'));
+      text(elements.controllerStatus, 'Connect a USB or Bluetooth controller, then press any button.');
+    }
     elements.advanced.hidden = config.advanced === false || config.graphics === false;
     elements.graphicsRow.hidden = config.graphics === false;
     elements.fpsRow.hidden = config.graphics === false || config.fps === false;
@@ -129,6 +144,21 @@
       document.documentElement.style.setProperty('--wasm-game-framework-background-image', 'none');
     }
     dataClient = WasmGameFramework.createContainerDataClient({ variant: rootConfig.variants ? variant : '' });
+    const persistenceConfig = config.persistence === false ? null : (config.persistence || {});
+    const persistenceNamespace = persistenceConfig &&
+      (persistenceConfig.namespace || `${rootConfig.persistenceNamespace || rootConfig.id || 'wasm-game'}-${variant}`);
+    persistence = persistenceConfig && WasmGameFramework.createPersistenceManager({
+      namespace: persistenceNamespace,
+      root: WasmGameFramework.resolvePersistenceRoot(persistenceConfig.root, {
+        namespace: persistenceNamespace,
+        variant
+      }),
+      debounceMs: persistenceConfig.debounceMs,
+      intervalMs: persistenceConfig.intervalMs,
+      requestDurability: persistenceConfig.requestDurability !== false,
+      onStatus: detail => adapter?.persistenceChanged?.(detail, context()),
+      onError: error => log(`[wasm-game-framework] save/config persistence failed: ${error?.message || error}`)
+    });
   }
 
   function setStatus(message, error) {
@@ -154,7 +184,7 @@
 
   function context() {
     return Object.freeze({
-      framework: WasmGameFramework, shell, dataClient, config, rootConfig, variant, elements,
+      framework: WasmGameFramework, shell, dataClient, persistence, config, rootConfig, variant, elements,
       preferences: shell.preferences, setStatus, setLoading, log,
       setEngineState: (state, options) => shell.setEngineState(state, options),
       showLauncher: () => shell.showLauncher(), showLoading: () => shell.showLoading(),
@@ -190,6 +220,7 @@
     elements.provisioning.hidden = true;
     elements.play.hidden = true;
     elements.identityRow.hidden = visible || config.identity === false;
+    elements.controllerRow.hidden = visible || WasmGameFramework.normalizeControllerMode(config.controller) === 'disabled';
     elements.advanced.hidden = visible || config.advanced === false || config.graphics === false;
     elements.fullscreenRow.hidden = visible || config.fullscreen === false || !document.documentElement.requestFullscreen;
     if (visible) {
@@ -255,16 +286,25 @@
       onInputCaptureChange: captured => adapter?.inputCaptureChanged?.(captured, context()),
       onPointerMove: (detail, event) => adapter?.pointerMove?.(detail, event, context()),
       onPointerButton: (detail, event) => adapter?.pointerButton?.(detail, event, context()),
+      controller: config.controller || { mode: 'disabled' },
+      controllerRow: elements.controllerRow,
+      controllerSelect: elements.controllerSelect,
+      controllerStatus: elements.controllerStatus,
+      onControllerFrame: detail => adapter?.controllerFrame?.(detail, context()),
+      onControllerChange: detail => adapter?.controllerChanged?.(detail, context()),
       onContextLost: event => adapter?.contextLost?.(event, context()),
       onContextRestored: event => adapter?.contextRestored?.(event, context()),
       preferences: {
         namespace: rootConfig.preferencesNamespace || rootConfig.id || 'wasm-game',
         playerName: elements.playerName, qualityProfile: elements.graphicsProfile,
         targetFps: elements.fpsTarget, dynamicQuality: elements.dynamicQuality, fullscreen: elements.launchFullscreen,
+        controller: elements.controllerSelect,
         defaults: {
           playerName: config.defaultPlayerName || 'Player', qualityProfile: config.defaultProfile || 'default',
           targetFps: config.defaultFps || 60, dynamicQuality: config.defaultDynamicQuality !== false,
-          fullscreen: config.defaultFullscreen === true
+          fullscreen: config.defaultFullscreen === true,
+          controller: config.defaultController ||
+            (WasmGameFramework.normalizeControllerMode(config.controller) === 'disabled' ? 'disabled' : 'auto')
         },
         onChange: values => adapter?.preferencesChanged?.(values, context())
       }

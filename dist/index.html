@@ -45,6 +45,18 @@
         <input id="player-name" data-shell-player-name maxlength="32" autocomplete="nickname" spellcheck="false">
       </label>
 
+      <section id="controller-row" data-shell-controller hidden>
+        <label>
+          Controller
+          <select id="game-controller" data-shell-controller-select>
+            <option value="disabled">Disabled</option>
+            <option value="auto">Auto-detect</option>
+          </select>
+        </label>
+        <p id="controller-mode" data-shell-controller-mode></p>
+        <p id="controller-status" data-shell-controller-status role="status"></p>
+      </section>
+
       <details id="advanced-settings" data-shell-advanced>
         <summary>Advanced settings</summary>
         <label id="graphics-row" data-shell-graphics>

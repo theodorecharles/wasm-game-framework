@@ -3,7 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { validateAdapterContract } = require('../dist/wasm-game-framework.js');
+const { normalizeControllerMode, resolvePersistenceRoot, validateAdapterContract } = require('../dist/wasm-game-framework.js');
 const { normalizeManifestCollection } = require('../server/provisioning.js');
 
 function fail(message) {
@@ -44,7 +44,8 @@ function assertNeutralReadyCopy(config, key) {
   }
 }
 
-function checkConfig(siteRoot, key, config, adapterSource) {
+function checkConfig(siteRoot, key, config, adapterSource, rootConfig) {
+  let resolvedPersistenceRoot = null;
   if (!['4:3', '16:9', 'dynamic'].includes(config.displayMode)) {
     fail(`${key}: displayMode must be exactly 4:3, 16:9, or dynamic`);
   }
@@ -59,6 +60,44 @@ function checkConfig(siteRoot, key, config, adapterSource) {
   }
   if (config.fullscreen !== true && config.fullscreen !== false) {
     fail(`${key}: fullscreen capability must be explicit`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(config, 'controller')) {
+    fail(`${key}: controller capability must be explicit`);
+  }
+  const controllerMode = normalizeControllerMode(config.controller);
+  if (!controllerMode) {
+    fail(`${key}: controller.mode must be disabled, wasdMouse, or custom`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(config, 'persistence')) {
+    fail(`${key}: save/config persistence capability must be explicit`);
+  }
+  if (config.persistence !== false) {
+    if (!config.persistence || typeof config.persistence !== 'object' || Array.isArray(config.persistence)) {
+      fail(`${key}: persistence must be false or an object`);
+    }
+    const root = String(config.persistence.root || '');
+    if (!root.startsWith('/') || root.includes('..') || /[\\\0]/.test(root)) {
+      fail(`${key}: persistence.root must be an absolute traversal-free virtual filesystem path`);
+    }
+    try {
+      resolvedPersistenceRoot = resolvePersistenceRoot(root, {
+        namespace: config.persistence.namespace || `${rootConfig.id || 'wasm-game'}-${key}`,
+        variant: key
+      });
+    } catch (error) {
+      fail(`${key}: ${error.message}`);
+    }
+    for (const [name, minimum, maximum] of [['debounceMs', 0, 60000], ['intervalMs', 0, 600000]]) {
+      if (config.persistence[name] != null) {
+        const value = Number(config.persistence[name]);
+        if (!Number.isFinite(value) || value < minimum || value > maximum) {
+          fail(`${key}: persistence.${name} must be between ${minimum} and ${maximum}`);
+        }
+      }
+    }
+    if (config.persistence.requestDurability != null && typeof config.persistence.requestDurability !== 'boolean') {
+      fail(`${key}: persistence.requestDurability must be boolean`);
+    }
   }
   if (!config.icon || (!isRuntimeAsset(config.icon) && !fs.existsSync(publicFile(siteRoot, config.icon)))) {
     fail(`${key}: launcher icon is missing`);
@@ -75,7 +114,8 @@ function checkConfig(siteRoot, key, config, adapterSource) {
 
   const names = [
     'start', 'resize', 'pointerMove', 'pointerButton', 'readEngineState', 'captureLost',
-    'inputCaptureChanged', 'preferencesChanged', 'contextLost', 'contextRestored'
+    'inputCaptureChanged', 'preferencesChanged', 'controllerFrame', 'controllerChanged',
+    'persistenceChanged', 'contextLost', 'contextRestored'
   ];
   const adapter = Object.fromEntries(names.map(name => [name, methodStub(adapterSource, name)]).filter(([, value]) => value));
   try {
@@ -83,6 +123,7 @@ function checkConfig(siteRoot, key, config, adapterSource) {
   } catch (error) {
     fail(`${key}: ${error.message}`);
   }
+  return config.persistence === false ? null : resolvedPersistenceRoot;
 }
 
 function main() {
@@ -94,8 +135,13 @@ function main() {
   if (!fs.existsSync(adapterPath)) fail(`Missing ${adapterPath}`);
   const adapterSource = fs.readFileSync(adapterPath, 'utf8');
 
+  const resolvedPersistenceRoots = new Map();
   for (const { key, config } of mergedVariants(rootConfig)) {
-    checkConfig(siteRoot, key, config, adapterSource);
+    const persistenceRoot = checkConfig(siteRoot, key, config, adapterSource, rootConfig);
+    if (persistenceRoot && resolvedPersistenceRoots.has(persistenceRoot)) {
+      fail(`${key}: persistence root ${persistenceRoot} collides with ${resolvedPersistenceRoots.get(persistenceRoot)}`);
+    }
+    if (persistenceRoot) resolvedPersistenceRoots.set(persistenceRoot, key);
   }
   const dataManifestPath = path.join(siteRoot, 'wasm-game-data.json');
   if (fs.existsSync(dataManifestPath)) {

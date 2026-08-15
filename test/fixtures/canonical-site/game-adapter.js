@@ -7,5 +7,11 @@ globalThis.WasmGameAdapter = {
   },
   captureLost() {
     return undefined;
+  },
+  controllerFrame() {
+    return undefined;
+  },
+  controllerChanged() {
+    return undefined;
   }
 };

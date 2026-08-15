@@ -49,6 +49,9 @@ engine:
   context-loss boundaries;
 - player identity, graphics/FPS preferences, runtime state, pointer capture,
   cursor release, browser-shortcut boundaries, and desktop capability notice;
+- launch-card USB/Bluetooth controller discovery and stable selection,
+  animation-frame Gamepad polling, normalized WASD/mouse actions, raw custom
+  frames, connection lifecycle, and optional haptics;
 - browser/platform capability detection and actionable unsupported-browser
   diagnostics;
 - validated game-file caching in IndexedDB, downstream format-validator
@@ -56,7 +59,8 @@ engine:
 - first-run validated container provisioning into persistent `/data`, exact
   same-origin download allowlists, and automatic removal of setup UI afterward;
 - cache-first game-data sets and read-only WORKERFS/chunked MEMFS mounting;
-- save/config persistence and import/export boundaries;
+- variant-scoped save/config/keybinding/save-RAM/memory-card persistence,
+  pre-main restore, serialized autosave, and import/export boundaries;
 - audio gesture unlock, focus/device suspension recovery, and master controls;
 - loading progress, log/crash surfaces, retry, and WebGL context-loss recovery;
 - FPS telemetry and optional automatic quality-profile control;
@@ -92,6 +96,12 @@ transitions; acknowledge dynamic native buffer sizes; provide the engine action
 used when pointer capture is lost; and translate the common WASD/mouse policy
 into native bindings. It does not implement its own launcher, provisioning
 screen, pointer-lock manager, mobile warning, or canvas sizing CSS.
+
+Every merged game manifest explicitly declares controller and persistence
+capabilities. Controller discovery and polling stay in the framework; mappings
+to native keys, mouse axes/buttons, virtual console pads, or other engine input
+live in the adapter. A persistence-enabled adapter mounts and restores the
+framework IDBFS root before native configuration or save loading begins.
 
 The canonical bootstrap validates the adapter seam before enabling Play. A
 package that declares native-managed resizing must implement `resize()`. A

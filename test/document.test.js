@@ -42,6 +42,9 @@ assert.match(bootstrap, /text\(elements\.description, config\.description\)/,
 assert.doesNotMatch(bootstrap, /elements\.description[^\n]*(?:game data|files?|cache)/i,
   'an omitted launcher description must not receive framework fallback copy');
 assert.match(bootstrap, /createContainerDataClient\(\{ variant/);
+assert.match(bootstrap, /createPersistenceManager\(/,
+  'the canonical bootstrap must expose variant-scoped save and configuration persistence');
+assert.match(bootstrap, /persistenceChanged/);
 assert.match(bootstrap, /displayMode: config\.displayMode/);
 assert.match(bootstrap, /adapter\?\.readEngineState/);
 assert.match(bootstrap, /adapter\?\.readCaptureIntent/,
@@ -53,6 +56,10 @@ assert.match(bootstrap, /--wasm-game-framework-background-image/);
 assert.match(bootstrap, /link\[rel="icon"\]/);
 assert.match(html, /data-shell-game-icon/);
 assert.match(html, /data-shell-launch-fullscreen/);
+assert.match(html, /data-shell-controller/);
+assert.match(html, /data-shell-controller-select/);
+assert.match(bootstrap, /Connect a USB or Bluetooth controller/);
+assert.match(bootstrap, /onControllerFrame/);
 assert.match(html, /data-shell-password/);
 assert.match(html, /data-shell-password-input/);
 assert.match(html, /autocomplete="current-password"/);

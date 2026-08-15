@@ -72,6 +72,21 @@
     CRASHED: 'crashed'
   });
 
+  const CONTROLLER_MODES = Object.freeze({
+    DISABLED: 'disabled',
+    WASD_MOUSE: 'wasdMouse',
+    CUSTOM: 'custom'
+  });
+
+  function normalizeControllerMode(value) {
+    const declaration = value && typeof value === 'object' ? value.mode : value;
+    const mode = String(declaration || CONTROLLER_MODES.DISABLED).trim().toLowerCase();
+    if (mode === 'disabled' || mode === 'none' || mode === 'off') return CONTROLLER_MODES.DISABLED;
+    if (mode === 'wasdmouse' || mode === 'wasd-mouse' || mode === 'wasd+mouse') return CONTROLLER_MODES.WASD_MOUSE;
+    if (mode === 'custom') return CONTROLLER_MODES.CUSTOM;
+    return null;
+  }
+
   function validateAdapterContract(gameConfig, adapter) {
     const config = gameConfig || {};
     const seam = adapter || {};
@@ -92,6 +107,13 @@
       requireMethod('readEngineState', 'when gameplay pointer capture is enabled');
       requireMethod('captureLost', 'so Escape and pointer-lock loss return control to the native menu');
     }
+    const controllerMode = normalizeControllerMode(config.controller);
+    if (!controllerMode) {
+      errors.push('controller.mode must be disabled, wasdMouse, or custom.');
+    } else if (controllerMode !== CONTROLLER_MODES.DISABLED) {
+      requireMethod('controllerFrame', `when controller mode is ${controllerMode}`);
+      requireMethod('controllerChanged', `so ${controllerMode} input releases held actions on disable or disconnect`);
+    }
 
     if (errors.length) {
       throw new Error(`Game adapter contract failed:\n- ${errors.join('\n- ')}`);
@@ -100,7 +122,8 @@
       valid: true,
       nativeResize: config.nativeManaged === true,
       absolutePointer: config.pointerWidth != null || config.pointerHeight != null || config.pointerFit != null,
-      pointerCapture: config.pointerLock !== false
+      pointerCapture: config.pointerLock !== false,
+      controllerMode
     });
   }
 
@@ -199,6 +222,7 @@
       webgl,
       webgl2,
       audio: typeof AudioContext === 'function' || typeof webkitAudioContext === 'function',
+      gamepad: typeof globalThis.navigator?.getGamepads === 'function',
       pointerLock: typeof document !== 'undefined' && 'pointerLockElement' in document,
       workers: typeof Worker === 'function',
       sharedArrayBuffer: typeof SharedArrayBuffer === 'function' && Boolean(globalThis.crossOriginIsolated),
@@ -217,7 +241,8 @@
       qualityProfile: element(config.qualityProfile, '[data-shell-quality-profile]'),
       targetFps: element(config.targetFps, '[data-shell-target-fps]'),
       dynamicQuality: element(config.dynamicQuality, '[data-shell-dynamic-quality]'),
-      fullscreen: element(config.fullscreen, '[data-shell-launch-fullscreen]')
+      fullscreen: element(config.fullscreen, '[data-shell-launch-fullscreen]'),
+      controller: element(config.controller, '[data-shell-controller-select]')
     };
 
     function values() {
@@ -226,7 +251,8 @@
         qualityProfile: String(fields.qualityProfile?.value || config.defaults?.qualityProfile || 'default'),
         targetFps: Number(fields.targetFps?.value || config.defaults?.targetFps || 60),
         dynamicQuality: fields.dynamicQuality ? Boolean(fields.dynamicQuality.checked) : Boolean(config.defaults?.dynamicQuality),
-        fullscreen: fields.fullscreen ? Boolean(fields.fullscreen.checked) : Boolean(config.defaults?.fullscreen)
+        fullscreen: fields.fullscreen ? Boolean(fields.fullscreen.checked) : Boolean(config.defaults?.fullscreen),
+        controller: String(fields.controller?.value || config.defaults?.controller || 'disabled')
       });
     }
 
@@ -246,12 +272,252 @@
       if (fields.targetFps && merged.targetFps) fields.targetFps.value = String(merged.targetFps);
       if (fields.dynamicQuality && merged.dynamicQuality !== undefined) fields.dynamicQuality.checked = Boolean(merged.dynamicQuality);
       if (fields.fullscreen && merged.fullscreen !== undefined) fields.fullscreen.checked = Boolean(merged.fullscreen);
+      if (fields.controller && merged.controller) {
+        const selectedController = String(merged.controller);
+        if (!Array.from(fields.controller.options || []).some(option => option.value === selectedController) &&
+            selectedController.startsWith('device:')) {
+          const option = (fields.controller.ownerDocument || globalThis.document)?.createElement?.('option');
+          if (option) {
+            option.value = selectedController;
+            option.textContent = 'Selected controller (disconnected)';
+            fields.controller.appendChild(option);
+          }
+        }
+        fields.controller.value = selectedController;
+      }
       return values();
     }
 
     for (const field of Object.values(fields).filter(Boolean)) field.addEventListener('change', save);
     load();
     return Object.freeze({ namespace, storageKey, fields: Object.freeze(fields), values, load, save });
+  }
+
+  function controllerDeadzone(value, deadzone) {
+    const input = Math.max(-1, Math.min(1, Number(value) || 0));
+    const threshold = Math.max(0, Math.min(0.95, Number(deadzone) || 0));
+    const magnitude = Math.abs(input);
+    if (magnitude <= threshold) return 0;
+    return Math.sign(input) * ((magnitude - threshold) / (1 - threshold));
+  }
+
+  function controllerDeviceKey(gamepad) {
+    const identity = `${String(gamepad?.id || '')}\u0000${String(gamepad?.mapping || '')}`;
+    let hash = 2166136261;
+    for (let index = 0; index < identity.length; index += 1) {
+      hash ^= identity.charCodeAt(index);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return `device:${hash.toString(16).padStart(8, '0')}`;
+  }
+
+  function snapshotGamepad(gamepad) {
+    if (!gamepad) return null;
+    return Object.freeze({
+      index: Number(gamepad.index),
+      key: controllerDeviceKey(gamepad),
+      id: String(gamepad.id || `Controller ${Number(gamepad.index) + 1}`),
+      mapping: String(gamepad.mapping || ''),
+      connected: gamepad.connected !== false,
+      timestamp: Number(gamepad.timestamp) || 0,
+      axes: Object.freeze(Array.from(gamepad.axes || [], value => Math.max(-1, Math.min(1, Number(value) || 0)))),
+      buttons: Object.freeze(Array.from(gamepad.buttons || [], button => Object.freeze({
+        pressed: Boolean(button?.pressed),
+        touched: Boolean(button?.touched),
+        value: Math.max(0, Math.min(1, Number(button?.value) || 0))
+      })))
+    });
+  }
+
+  function normalizeWasdMouseController(gamepad, options) {
+    const config = options || {};
+    const moveDeadzone = Number(config.moveDeadzone ?? config.deadzone ?? 0.18);
+    const lookDeadzone = Number(config.lookDeadzone ?? config.deadzone ?? 0.14);
+    const sensitivity = Math.max(0.01, Math.min(10, Number(config.lookSensitivity) || 1));
+    const axis = index => Number(gamepad?.axes?.[index]) || 0;
+    const button = index => gamepad?.buttons?.[index] || Object.freeze({ pressed: false, touched: false, value: 0 });
+    const moveX = controllerDeadzone(axis(0), moveDeadzone);
+    const moveY = controllerDeadzone(axis(1), moveDeadzone);
+    const lookX = controllerDeadzone(axis(2), lookDeadzone) * sensitivity;
+    const lookY = controllerDeadzone(axis(3), lookDeadzone) * sensitivity * (config.invertY ? -1 : 1);
+    return Object.freeze({
+      moveX,
+      moveY,
+      lookX,
+      lookY,
+      forward: Math.max(0, -moveY, button(12).value),
+      backward: Math.max(0, moveY, button(13).value),
+      left: Math.max(0, -moveX, button(14).value),
+      right: Math.max(0, moveX, button(15).value),
+      jump: button(0).value,
+      crouch: button(1).value,
+      reload: button(2).value,
+      weapon: button(3).value,
+      previousWeapon: button(4).value,
+      nextWeapon: button(5).value,
+      altAttack: button(6).value,
+      attack: button(7).value,
+      scoreboard: button(8).value,
+      menu: button(9).value,
+      sprint: button(10).value,
+      melee: button(11).value
+    });
+  }
+
+  function createControllerManager(options) {
+    const config = options || {};
+    const mode = normalizeControllerMode(config.mode || config.controller || config);
+    if (!mode) throw new Error('Controller mode must be disabled, wasdMouse, or custom.');
+    const navigatorTarget = config.navigatorTarget || globalThis.navigator;
+    const eventTarget = config.eventTarget || globalThis.window;
+    const requestFrame = config.requestAnimationFrame || globalThis.requestAnimationFrame;
+    const cancelFrame = config.cancelAnimationFrame || globalThis.cancelAnimationFrame;
+    let selection = String(config.selection || config.defaultSelection || (mode === CONTROLLER_MODES.DISABLED ? 'disabled' : 'auto'));
+    let controllers = Object.freeze([]);
+    let activeIndex = null;
+    let lastActiveIndex = null;
+    let frame = 0;
+    let running = false;
+    let signature = '';
+    let lastFrameAt = 0;
+
+    function availableGamepads() {
+      if (typeof navigatorTarget?.getGamepads !== 'function') return [];
+      return Array.from(navigatorTarget.getGamepads() || []).filter(gamepad => gamepad && gamepad.connected !== false);
+    }
+
+    function hasActivity(gamepad) {
+      return Array.from(gamepad?.axes || []).some(value => Math.abs(Number(value) || 0) > 0.2) ||
+        Array.from(gamepad?.buttons || []).some(button => Boolean(button?.pressed) || Number(button?.value) > 0.2);
+    }
+
+    function selectedGamepad(gamepads) {
+      if (selection === 'disabled' || mode === CONTROLLER_MODES.DISABLED) return null;
+      if (selection.startsWith('device:')) {
+        return gamepads.find(gamepad => controllerDeviceKey(gamepad) === selection) || null;
+      }
+      for (const gamepad of gamepads) if (hasActivity(gamepad)) lastActiveIndex = Number(gamepad.index);
+      return gamepads.find(gamepad => Number(gamepad.index) === lastActiveIndex) ||
+        gamepads.slice().sort((left, right) => (Number(right.timestamp) || 0) - (Number(left.timestamp) || 0))[0] || null;
+    }
+
+    function state() {
+      return Object.freeze({
+        mode,
+        supported: typeof navigatorTarget?.getGamepads === 'function',
+        selection,
+        activeIndex,
+        connected: controllers.length > 0,
+        controllers
+      });
+    }
+
+    function publishConnections(gamepads) {
+      const nextControllers = Object.freeze(gamepads.map(snapshotGamepad));
+      const nextSignature = nextControllers.map(gamepad => `${gamepad.index}:${gamepad.key}`).join('|');
+      controllers = nextControllers;
+      if (nextSignature !== signature) {
+        signature = nextSignature;
+        config.onChange?.(state());
+        if (typeof globalThis.CustomEvent === 'function') {
+          eventTarget?.dispatchEvent?.(new CustomEvent('wasm-game-framework-controller-change', { detail: state() }));
+        }
+      }
+    }
+
+    function poll(frameTimestamp) {
+      frame = 0;
+      if (!running) return;
+      const timestamp = Number(frameTimestamp) || Number(config.now?.()) || Number(globalThis.performance?.now?.()) || Date.now();
+      const deltaMs = lastFrameAt ? Math.max(0, Math.min(250, timestamp - lastFrameAt)) : 0;
+      lastFrameAt = timestamp;
+      const gamepads = availableGamepads();
+      publishConnections(gamepads);
+      const selected = selectedGamepad(gamepads);
+      const nextActiveIndex = selected ? Number(selected.index) : null;
+      if (activeIndex !== nextActiveIndex) {
+        activeIndex = nextActiveIndex;
+        config.onChange?.(state());
+      }
+      if (selected && selection !== 'disabled') {
+        const gamepad = snapshotGamepad(selected);
+        const detail = Object.freeze({
+          mode,
+          selection,
+          timestamp,
+          deltaMs,
+          gamepad,
+          actions: mode === CONTROLLER_MODES.WASD_MOUSE
+            ? normalizeWasdMouseController(gamepad, config)
+            : null
+        });
+        config.onFrame?.(detail);
+        if (typeof globalThis.CustomEvent === 'function') {
+          eventTarget?.dispatchEvent?.(new CustomEvent('wasm-game-framework-controller-frame', { detail }));
+        }
+      }
+      if (typeof requestFrame === 'function') frame = requestFrame(poll);
+    }
+
+    function refresh() {
+      const gamepads = availableGamepads();
+      publishConnections(gamepads);
+      return state();
+    }
+
+    function select(value) {
+      const next = String(value || 'disabled');
+      if (next !== 'auto' && next !== 'disabled' && !/^device:[0-9a-f]{8}$/.test(next)) {
+        throw new Error(`Unknown controller selection: ${next}`);
+      }
+      selection = next;
+      refresh();
+      config.onChange?.(state());
+      return state();
+    }
+
+    function start() {
+      if (running || mode === CONTROLLER_MODES.DISABLED) return false;
+      running = true;
+      lastFrameAt = 0;
+      eventTarget?.addEventListener?.('gamepadconnected', refresh);
+      eventTarget?.addEventListener?.('gamepaddisconnected', refresh);
+      poll();
+      return true;
+    }
+
+    function stop() {
+      if (!running) return;
+      running = false;
+      lastFrameAt = 0;
+      eventTarget?.removeEventListener?.('gamepadconnected', refresh);
+      eventTarget?.removeEventListener?.('gamepaddisconnected', refresh);
+      if (frame && typeof cancelFrame === 'function') cancelFrame(frame);
+      frame = 0;
+    }
+
+    async function rumble(effect) {
+      const gamepad = availableGamepads().find(value => Number(value.index) === activeIndex);
+      const actuator = gamepad?.vibrationActuator || gamepad?.hapticActuators?.[0];
+      if (!actuator) return false;
+      const request = effect || {};
+      if (typeof actuator.playEffect === 'function') {
+        await actuator.playEffect('dual-rumble', {
+          duration: Math.max(0, Number(request.duration) || 120),
+          startDelay: Math.max(0, Number(request.startDelay) || 0),
+          weakMagnitude: Math.max(0, Math.min(1, Number(request.weakMagnitude ?? request.magnitude) || 0)),
+          strongMagnitude: Math.max(0, Math.min(1, Number(request.strongMagnitude ?? request.magnitude) || 0))
+        });
+        return true;
+      }
+      if (typeof actuator.pulse === 'function') {
+        await actuator.pulse(Math.max(0, Math.min(1, Number(request.magnitude) || 0)), Math.max(0, Number(request.duration) || 120));
+        return true;
+      }
+      return false;
+    }
+
+    return Object.freeze({ mode, start, stop, refresh, select, rumble, state });
   }
 
   function requireCapabilities(requirements) {
@@ -317,33 +583,245 @@
     });
   }
 
+  function persistenceName(value) {
+    return String(value || 'wasm-game').trim().replace(/[^a-z0-9._-]/gi, '-').replace(/^-+|-+$/g, '') || 'wasm-game';
+  }
+
+  function persistenceRoot(value, fallback) {
+    const source = String(value || fallback || '/persistent/wasm-game').trim();
+    if (!source.startsWith('/') || source.includes('\\') || source.includes('\0')) {
+      throw new Error('The persistent filesystem root must be an absolute virtual path.');
+    }
+    const segments = source.split('/').filter(Boolean);
+    if (segments.some(segment => segment === '.' || segment === '..')) {
+      throw new Error('The persistent filesystem root cannot contain traversal segments.');
+    }
+    return `/${segments.join('/')}`;
+  }
+
+  function resolvePersistenceRoot(value, options) {
+    const config = options || {};
+    const namespace = persistenceName(config.namespace);
+    const variant = persistenceName(config.variant || 'game');
+    const template = String(value || '/persistent/{namespace}');
+    return persistenceRoot(template
+      .replaceAll('{namespace}', namespace)
+      .replaceAll('{variant}', variant));
+  }
+
+  function ensureFsDirectory(FS, directory) {
+    const root = String(directory || '/').replace(/\/$/, '') || '/';
+    if (typeof FS.mkdirTree === 'function') {
+      FS.mkdirTree(root);
+      return;
+    }
+    if (typeof FS.createPath !== 'function') throw new Error('The Emscripten filesystem cannot create persistent directories.');
+    let parent = '/';
+    for (const segment of root.split('/').filter(Boolean)) {
+      try { FS.createPath(parent, segment, true, true); } catch (error) {
+        if (!/exist/i.test(String(error && error.message))) throw error;
+      }
+      parent = parent === '/' ? `/${segment}` : `${parent}/${segment}`;
+    }
+  }
+
   function createPersistentFs(options) {
     const config = options || {};
     const FS = config.FS;
-    const root = String(config.root || '/persistent').replace(/\/$/, '') || '/persistent';
+    const namespace = persistenceName(config.namespace);
+    const root = persistenceRoot(config.root, `/persistent/${namespace}`);
+    const visibilityTarget = config.visibilityTarget || globalThis.document;
+    const pageTarget = config.pageTarget || globalThis.window;
+    const debounceMs = Math.max(0, Number(config.debounceMs ?? 750) || 0);
+    const intervalMs = config.intervalMs === 0 ? 0 : Math.max(1000, Number(config.intervalMs) || 5000);
     if (!FS) throw new Error('An Emscripten FS instance is required.');
     let initialized = false;
-    let syncPending = null;
-    function sync(populate) {
-      if (syncPending) return syncPending;
-      syncPending = new Promise((resolve, reject) => {
-        FS.syncfs(Boolean(populate), error => error ? reject(error) : resolve());
-      }).finally(() => { syncPending = null; });
-      return syncPending;
+    let supported = null;
+    let dirty = false;
+    let destroyed = false;
+    let listenersAttached = false;
+    let saveTimer = 0;
+    let intervalTimer = 0;
+    let syncTail = Promise.resolve();
+    let initializePromise = null;
+    let lastSavedAt = 0;
+    let lastError = null;
+
+    function snapshot() {
+      return Object.freeze({ namespace, root, initialized, supported, dirty, lastSavedAt, lastError });
     }
-    async function initialize() {
-      if (initialized) return true;
-      FS.mkdirTree?.(root);
-      const idbfs = FS.filesystems?.IDBFS;
-      if (!idbfs || typeof FS.mount !== 'function' || typeof FS.syncfs !== 'function') return false;
-      try { FS.mount(idbfs, {}, root); } catch (error) {
-        if (!/mounted|busy/i.test(String(error && error.message))) throw error;
+
+    function publish() {
+      config.onStatus?.(snapshot());
+    }
+
+    function sync(populate) {
+      const operation = syncTail.then(() => new Promise((resolve, reject) => {
+        FS.syncfs(Boolean(populate), error => error ? reject(error) : resolve());
+      }));
+      syncTail = operation.catch(() => undefined);
+      return operation;
+    }
+
+    function reportError(error) {
+      lastError = String(error?.message || error);
+      config.onError?.(error);
+      publish();
+    }
+
+    async function save() {
+      if (!initialized || supported !== true || destroyed) return false;
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = 0;
       }
-      await sync(true);
-      initialized = true;
+      try {
+        await sync(false);
+        dirty = false;
+        lastSavedAt = Date.now();
+        lastError = null;
+        publish();
+        return true;
+      } catch (error) {
+        reportError(error);
+        throw error;
+      }
+    }
+
+    function requestSave() {
+      if (!initialized || supported !== true || destroyed || saveTimer) return;
+      saveTimer = setTimeout(() => {
+        saveTimer = 0;
+        save().catch(() => undefined);
+      }, debounceMs);
+    }
+
+    function markDirty() {
+      if (destroyed) return false;
+      dirty = true;
+      publish();
+      requestSave();
       return true;
     }
-    return Object.freeze({ root, initialize, save: () => sync(false), reload: () => sync(true) });
+
+    function onVisibilityChange() {
+      if (visibilityTarget?.visibilityState === 'hidden') save().catch(() => undefined);
+    }
+
+    function flushForPageExit() {
+      save().catch(() => undefined);
+    }
+
+    function attachLifecycle() {
+      if (listenersAttached || config.autoSave === false) return;
+      visibilityTarget?.addEventListener?.('visibilitychange', onVisibilityChange);
+      pageTarget?.addEventListener?.('pagehide', flushForPageExit);
+      pageTarget?.addEventListener?.('beforeunload', flushForPageExit);
+      if (intervalMs) intervalTimer = setInterval(() => save().catch(() => undefined), intervalMs);
+      listenersAttached = true;
+    }
+
+    function detachLifecycle() {
+      if (!listenersAttached) return;
+      visibilityTarget?.removeEventListener?.('visibilitychange', onVisibilityChange);
+      pageTarget?.removeEventListener?.('pagehide', flushForPageExit);
+      pageTarget?.removeEventListener?.('beforeunload', flushForPageExit);
+      if (intervalTimer) clearInterval(intervalTimer);
+      intervalTimer = 0;
+      listenersAttached = false;
+    }
+
+    async function initialize() {
+      if (initialized) return supported === true;
+      if (initializePromise) return initializePromise;
+      initializePromise = (async () => {
+        const idbfs = FS.filesystems?.IDBFS;
+        if (!idbfs || typeof FS.mount !== 'function' || typeof FS.syncfs !== 'function') {
+          initialized = true;
+          supported = false;
+          publish();
+          return false;
+        }
+        ensureFsDirectory(FS, root);
+        try { FS.mount(idbfs, {}, root); } catch (error) {
+          if (!/mounted|busy/i.test(String(error && error.message))) throw error;
+        }
+        try {
+          await sync(true);
+          initialized = true;
+          supported = true;
+          lastError = null;
+          attachLifecycle();
+          publish();
+          if (config.requestDurability !== false) {
+            try { globalThis.navigator?.storage?.persist?.().catch?.(() => undefined); } catch (_) {}
+          }
+          return true;
+        } catch (error) {
+          initialized = false;
+          supported = true;
+          reportError(error);
+          throw error;
+        }
+      })();
+      try { return await initializePromise; } finally { initializePromise = null; }
+    }
+
+    async function reload() {
+      if (!initialized || supported !== true || destroyed) return false;
+      await sync(true);
+      dirty = false;
+      publish();
+      return true;
+    }
+
+    async function destroy() {
+      if (destroyed) return;
+      if (initialized && supported === true) await save().catch(() => undefined);
+      destroyed = true;
+      detachLifecycle();
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = 0;
+    }
+
+    return Object.freeze({ namespace, root, initialize, markDirty, save, reload, destroy, status: snapshot });
+  }
+
+  function createPersistenceManager(options) {
+    const config = options || {};
+    const namespace = persistenceName(config.namespace);
+    const root = persistenceRoot(config.root, `/persistent/${namespace}`);
+    const mounts = new Set();
+
+    async function attach(FS, overrides) {
+      const mount = createPersistentFs({ ...config, ...(overrides || {}), FS, namespace, root: overrides?.root || root });
+      const supported = await mount.initialize();
+      if (!supported && config.allowUnsupported !== true && overrides?.allowUnsupported !== true) {
+        await mount.destroy();
+        throw new Error('This engine build does not expose Emscripten IDBFS save/config persistence.');
+      }
+      mounts.add(mount);
+      return mount;
+    }
+
+    async function save() {
+      return Promise.all(Array.from(mounts, mount => mount.save()));
+    }
+
+    function markDirty() {
+      for (const mount of mounts) mount.markDirty();
+    }
+
+    async function destroy() {
+      await Promise.all(Array.from(mounts, mount => mount.destroy()));
+      mounts.clear();
+    }
+
+    function status() {
+      return Object.freeze({ namespace, root, attached: mounts.size, mounts: Object.freeze(Array.from(mounts, mount => mount.status())) });
+    }
+
+    return Object.freeze({ namespace, root, attach, markDirty, save, destroy, status });
   }
 
   function createDiagnostics(options) {
@@ -1353,6 +1831,9 @@
     const loading = element(config.loading, '[data-shell-loading]');
     const runtime = element(config.runtime, '[data-shell-runtime]');
     const canvas = element(config.canvas, '[data-shell-canvas], canvas');
+    const controllerRow = element(config.controllerRow, '[data-shell-controller]');
+    const controllerSelect = element(config.controllerSelect, '[data-shell-controller-select]');
+    const controllerStatus = element(config.controllerStatus, '[data-shell-controller-status]');
     const graphics = Array.from(document.querySelectorAll('[data-shell-graphics]'));
     const identity = Array.from(document.querySelectorAll('[data-shell-identity]'));
     const advanced = Array.from(document.querySelectorAll('[data-shell-advanced]'));
@@ -1369,6 +1850,8 @@
     let canvasObserver = null;
     let engineState = Object.values(ENGINE_STATES).includes(config.engineState) ? config.engineState : ENGINE_STATES.LAUNCHER;
     let preferences = null;
+    let controller = null;
+    let controllerSelectionChanged = null;
 
     function inputCaptured() {
       return Boolean(canvas && document.pointerLockElement === canvas);
@@ -1664,6 +2147,68 @@
     resize();
     if (config.preferences) preferences = createPreferences(config.preferences === true ? {} : config.preferences);
 
+    const controllerConfig = config.controller && typeof config.controller === 'object'
+      ? config.controller
+      : { mode: config.controller };
+    const controllerMode = normalizeControllerMode(controllerConfig);
+    if (!controllerMode) throw new Error('Controller mode must be disabled, wasdMouse, or custom.');
+
+    function updateControllerUi(detail) {
+      if (!controllerRow || controllerMode === CONTROLLER_MODES.DISABLED) return;
+      controllerRow.hidden = false;
+      const selected = detail.selection || controllerSelect?.value || 'auto';
+      if (controllerSelect) {
+        const choices = [
+          { value: 'disabled', label: 'Disabled' },
+          { value: 'auto', label: 'Auto-detect' },
+          ...detail.controllers.map(gamepad => ({ value: gamepad.key, label: gamepad.id }))
+        ];
+        const values = new Set(choices.map(choice => choice.value));
+        if (!values.has(selected) && selected.startsWith('device:')) {
+          choices.push({ value: selected, label: 'Selected controller (disconnected)' });
+        }
+        controllerSelect.textContent = '';
+        for (const choice of choices) {
+          const option = document.createElement('option');
+          option.value = choice.value;
+          option.textContent = choice.label;
+          option.selected = choice.value === selected;
+          controllerSelect.appendChild(option);
+        }
+      }
+      if (controllerStatus) {
+        const active = detail.controllers.find(gamepad => gamepad.index === detail.activeIndex);
+        controllerStatus.textContent = selected === 'disabled'
+          ? 'Controller input is disabled.'
+          : active
+            ? `${active.id} connected.`
+            : detail.supported
+              ? 'Connect a USB or Bluetooth controller, then press any button.'
+              : 'This browser does not expose the Gamepad API.';
+      }
+    }
+
+    if (controllerMode !== CONTROLLER_MODES.DISABLED) {
+      controller = createControllerManager({
+        ...controllerConfig,
+        mode: controllerMode,
+        selection: preferences?.values().controller || controllerConfig.defaultSelection || 'auto',
+        onFrame: detail => config.onControllerFrame?.(detail),
+        onChange: detail => {
+          updateControllerUi(detail);
+          config.onControllerChange?.(detail);
+        }
+      });
+      controllerSelectionChanged = () => {
+        controller.select(controllerSelect.value);
+      };
+      controllerSelect?.addEventListener('change', controllerSelectionChanged);
+      updateControllerUi(controller.state());
+      controller.start();
+    } else if (controllerRow) {
+      controllerRow.hidden = true;
+    }
+
     function setEngineState(next, stateOptions) {
       const value = String(next || '').toLowerCase();
       if (!Object.values(ENGINE_STATES).includes(value)) throw new Error(`Unknown engine state: ${next}`);
@@ -1701,6 +2246,7 @@
       engineState: () => engineState,
       setEngineState,
       preferences,
+      controller,
       resize,
       setDisplay(next) {
         const display = next || {};
@@ -1745,6 +2291,8 @@
         document.removeEventListener('fullscreenchange', scheduleFullscreenResize);
         document.removeEventListener('pointerlockchange', publishInputCapture);
         document.removeEventListener('keydown', protectCapturedKey, true);
+        controller?.stop();
+        if (controllerSelectionChanged) controllerSelect?.removeEventListener('change', controllerSelectionChanged);
         if (canvas) {
           canvas.removeEventListener('pointerdown', requestInputCapture);
           canvas.removeEventListener('pointerup', captureAfterInteraction);
@@ -1765,10 +2313,12 @@
   }
 
   const api = Object.freeze({
-    version: '0.7.6',
+    version: '0.8.0',
     DISPLAY_MODES,
     ENGINE_STATES,
+    CONTROLLER_MODES,
     validateAdapterContract,
+    normalizeControllerMode,
     configure,
     fitRect,
     mapPointerPoint,
@@ -1776,8 +2326,12 @@
     detectCapabilities,
     requireCapabilities,
     createPreferences,
+    createControllerManager,
+    normalizeWasdMouseController,
     createQualityController,
     createPersistentFs,
+    createPersistenceManager,
+    resolvePersistenceRoot,
     createDiagnostics,
     resolveDeployment,
     createDataCache,
