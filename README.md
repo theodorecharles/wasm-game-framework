@@ -688,4 +688,5 @@ link rather than deleted.
 | IW 2.0 reconstruction | Call of Duty 2 Multiplayer | **Still in development** | [cod2-wasm](https://github.com/theodorecharles/cod2-wasm) |
 | Wolf3D | Wolfenstein 3D, Spear of Destiny | **Still in development** | [wolf3d-wasm](https://github.com/theodorecharles/wolf3d-wasm) |
 | DOSBox | Jill of the Jungle 1–3, Jazz Jackrabbit, Duke Nukem 1–2, Grand Theft Auto DOS Demo, The Need for Speed, SimCity 2000 | **Still in development** | [dosbox-wasm](https://github.com/theodorecharles/dosbox-wasm) |
+| OpenRCT2 | RollerCoaster Tycoon 1+2 | **Still in development** | [openrct2-wasm](https://github.com/theodorecharles/openrct2-wasm) |
 | Console emulation | NES, SNES, PlayStation, PlayStation 2 | **Still in development** | [emulation-wasm](https://github.com/theodorecharles/emulation-wasm) |
