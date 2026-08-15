@@ -6,7 +6,7 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.7.5**
+Current release: **0.7.6**
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -22,7 +22,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.7.5
+./scripts/build-base-image.sh wasm-game-framework:0.7.6
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -52,6 +52,9 @@ with a version/SHA manifest for reproducible offline images.
 Use [ADAPTER_RUNBOOK.md](ADAPTER_RUNBOOK.md) when adding or auditing a game.
 It defines the exact state, capture, resize, pointer, identity, profile,
 persistence, audio, Docker, and real-browser acceptance requirements.
+Use [SERVER_RUNBOOK.md](SERVER_RUNBOOK.md) for games with a dedicated server.
+It defines Play-triggered wake, readiness, population tracking, bot fill,
+idle shutdown, transport routing, recovery, and container acceptance.
 
 The browser document itself is framework-owned. A downstream game does not
 ship or maintain `index.html`; it ships only `wasm-game.json`,
@@ -118,6 +121,7 @@ globalThis.WasmGameAdapter = {
   async init(context) {},
   async start(context) {},
   readEngineState(context) { return 'menu'; },
+  readCaptureIntent(context) { return false; },
   resize(detail, context) {},
   captureLost(detail, context) {}
 };
@@ -128,13 +132,13 @@ all launcher, provisioning, loading, preference, canvas, mobile notice, and
 capture markup and behavior.
 
 `icon` is also installed as the tab favicon. Suite variants override it so the
-launcher and browser tab use the same authentic, redistributable title icon;
+launcher and browser tab use the same configured title icon;
 `iconPixelated` is available for intentionally low-resolution originals.
 
 The same manifest supplies installable-app metadata under `pwa`. The framework
 serves a variant-aware `/app.webmanifest`, registers its own service worker,
-and opens installed games in standalone landscape mode. Supply authentic
-192x192 and 512x512 PNGs, or a scalable SVG with `sizes: "any"`, so Chrome can
+and opens installed games in standalone landscape mode. Supply 192x192 and
+512x512 PNGs, or a scalable SVG with `sizes: "any"`, so Chrome can
 offer **Install app** with the correct game artwork. The service worker uses a
 network-first fallback only for the small framework shell. It deliberately
 does not duplicate engine artifacts or game data; validated
@@ -231,6 +235,30 @@ The data server exposes neither `/data` nor `/local-data`. Once the complete
 policy is valid, it serves only `/game-data/files/<key>`. Arbitrary names, path
 traversal, files outside their size envelope, failed validators, and replacement
 of already-valid files are rejected.
+
+## Optional play password
+
+Set `WASM_GAME_PASSWORD` in a Docker deployment to put the canonical launcher
+and protected game routes behind one shared password. When it is empty or
+unset, the launcher behaves exactly as before. When it is set, the launcher
+shows a password field before it loads the adapter or requests game data.
+
+```bash
+docker run -e WASM_GAME_PASSWORD='friends-only' -v game-data:/data IMAGE
+```
+
+A successful login creates a signed, expiring, HttpOnly, same-site session
+cookie. The password is never placed in a manifest, browser script, URL,
+status response, or log. `WASM_GAME_PASSWORD_TTL` controls the session lifetime
+and defaults to `12h`. Behind a trusted TLS-terminating proxy, set
+`WASM_GAME_TRUST_PROXY=true` so the session cookie receives its `Secure` flag.
+
+The canonical static server automatically protects `/game-data/status`, setup,
+and file delivery. A downstream server that owns `/wake` or `/ws` must create
+the same `createPasswordGate()` instance and require it for both the wake route
+and WebSocket upgrade; the exact integration is in
+[SERVER_RUNBOOK.md](SERVER_RUNBOOK.md). Protecting only the launcher is not an
+accepted server implementation.
 
 Example site manifest:
 
@@ -379,6 +407,8 @@ simultaneous wake requests, chooses a random rotation map, tracks fully joined
 human population, honors `KEEP_ALIVE`, and stops an idle dedicated server after
 `IDLE_TIMEOUT`. Browser launchers call `createWakeClient()` from their Play
 gesture so loading feedback starts immediately while the native server wakes.
+The complete integration and acceptance contract is in
+[SERVER_RUNBOOK.md](SERVER_RUNBOOK.md).
 
 ## Suite and single-title images
 
@@ -413,8 +443,8 @@ The generic static-image builder first creates the exact versioned
 variant lock on it. It never copies game data into an image:
 
 ```bash
-./scripts/build-static-image.sh ../crispy-doom-wasm/web doom-wasm:dev suite
-./scripts/build-static-image.sh ../crispy-doom-wasm/web doom2-wasm:dev doom2
+./scripts/build-static-image.sh ../idtech1-wasm/web idtech1-wasm:dev suite
+./scripts/build-static-image.sh ../idtech1-wasm/web idtech1-doom2-wasm:dev doom2
 ```
 
 Downstream CI may set `WASM_GAME_FRAMEWORK_IMAGE` to a published immutable
@@ -440,6 +470,14 @@ Never submit framework or downstream engine changes to any upstream project.
 Projects are listed as **Live** when a public deployment is available and
 **Still in development** while work continues toward a release.
 
+The intended public shape is one repository per reusable engine family, not
+one repository per executable and not one monorepo for unrelated engines. A
+family repository owns shared native/Emscripten adaptations and can emit both
+a suite image and independently branded game images. Existing per-game
+repositories remain available until the corresponding family repository
+reaches feature parity; they will then be archived with a clear “moved to”
+link rather than deleted.
+
 | Engine family | Games | Status | Current repositories |
 | --- | --- | --- | --- |
 | id Tech 1 | Doom, Doom II, TNT, Plutonia, Heretic, Hexen, Strife, Chex Quest | **Still in development** | [idtech1-wasm](https://github.com/theodorecharles/idtech1-wasm) |
@@ -452,11 +490,3 @@ Projects are listed as **Live** when a public deployment is available and
 | Source | Half-Life 2 | **Still in development** | [source-wasm](https://github.com/theodorecharles/source-wasm) |
 | Wolf3D | Wolfenstein 3D, Spear of Destiny | **Still in development** | [wolf3d-wasm](https://github.com/theodorecharles/wolf3d-wasm) |
 | DOSBox | Jill of the Jungle and future DOS titles | **Still in development** | [dosbox-wasm](https://github.com/theodorecharles/dosbox-wasm) |
-
-The intended public shape is one repository per reusable engine family, not
-one repository per executable and not one monorepo for unrelated engines. A
-family repository owns shared native/Emscripten adaptations and can emit both
-a suite image and independently branded game images. Existing per-game
-repositories remain available until the corresponding family repository
-reaches feature parity; they will then be archived with a clear “moved to”
-link rather than deleted.

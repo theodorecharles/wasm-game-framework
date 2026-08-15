@@ -6,6 +6,7 @@ const fsp = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
 const { createProvisioningStore, normalizeManifestCollection } = require('./provisioning');
+const { createPasswordGate } = require('./password-auth');
 const frameworkPackage = require('../package.json');
 
 const siteRoot = path.resolve(process.env.WASM_GAME_SITE_ROOT || '/opt/game-site');
@@ -115,6 +116,8 @@ function commonHeaders(extra) {
   };
 }
 
+const passwordGate = createPasswordGate({ headers: commonHeaders });
+
 function json(response, statusCode, value) {
   const body = Buffer.from(JSON.stringify(value));
   response.writeHead(statusCode, commonHeaders({
@@ -177,6 +180,8 @@ async function serveFile(request, response, filename, cacheControl) {
 const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, 'http://localhost');
+    if (await passwordGate.handle(request, response, url)) return;
+    if (url.pathname.startsWith('/game-data/') && !passwordGate.require(request, response)) return;
     if (url.pathname === '/game-data/status' && request.method === 'GET') {
       const selected = selectedStore(url);
       if (!selected.store && stores.size) {
@@ -245,7 +250,8 @@ const server = http.createServer(async (request, response) => {
       return response.end();
     }
     if (!['GET', 'HEAD'].includes(request.method)) return json(response, 405, { error: 'Method not allowed.' });
-    if (url.pathname === '/data' || url.pathname.startsWith('/data/') || url.pathname.startsWith('/local-data/')) {
+    if (url.pathname === '/data' || url.pathname.startsWith('/data/') ||
+        url.pathname === '/local-data' || url.pathname.startsWith('/local-data/')) {
       return json(response, 404, { error: 'Not found.' });
     }
     const shared = url.pathname.startsWith('/shared-shell/');

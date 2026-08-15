@@ -8,7 +8,9 @@
     variantRow: byId('variant-row'), variant: byId('game-variant'), provisioning: byId('data-provisioning'),
     instructions: byId('data-instructions'), chooseDirectory: byId('choose-directory'),
     chooseFiles: byId('choose-files'), fileInput: byId('game-files'), directoryInput: byId('game-directory'),
-    setupTokenRow: byId('setup-token-row'), setupToken: byId('setup-token'), identityRow: byId('identity-row'),
+    setupTokenRow: byId('setup-token-row'), setupToken: byId('setup-token'),
+    passwordRow: byId('password-row'), password: byId('game-password'), unlock: byId('unlock'),
+    identityRow: byId('identity-row'),
     playerName: byId('player-name'), advanced: byId('advanced-settings'), graphicsRow: byId('graphics-row'),
     graphicsProfile: byId('graphics-profile'), fpsRow: byId('fps-row'), fpsTarget: byId('fps-target'),
     dynamicRow: byId('dynamic-row'), dynamicQuality: byId('dynamic-quality'), play: byId('play'),
@@ -24,8 +26,10 @@
   let variant;
   let shell;
   let dataClient;
+  let passwordClient;
   let adapter;
   let initialized = false;
+  let runtimeInitialization;
 
   function text(node, value) {
     if (!node) return;
@@ -180,6 +184,37 @@
     return state;
   }
 
+  function showPasswordGate(visible) {
+    elements.passwordRow.hidden = !visible;
+    elements.unlock.hidden = !visible;
+    elements.provisioning.hidden = true;
+    elements.play.hidden = true;
+    elements.identityRow.hidden = visible || config.identity === false;
+    elements.advanced.hidden = visible || config.advanced === false || config.graphics === false;
+    elements.fullscreenRow.hidden = visible || config.fullscreen === false || !document.documentElement.requestFullscreen;
+    if (visible) {
+      elements.play.disabled = true;
+      setStatus('Enter the game password to continue.');
+      queueMicrotask(() => elements.password.focus());
+    }
+  }
+
+  async function initializeRuntime() {
+    if (runtimeInitialization) return runtimeInitialization;
+    runtimeInitialization = (async () => {
+      showPasswordGate(false);
+      await loadAdapter();
+      await adapter.init?.(context());
+      shell.resize();
+      initialized = true;
+      await refreshDataGate();
+    })();
+    try { return await runtimeInitialization; } catch (error) {
+      runtimeInitialization = null;
+      throw error;
+    }
+  }
+
   async function provision(files) {
     setStatus('Validating and installing game data…');
     await dataClient.provision(Array.from(files || []), {
@@ -201,6 +236,7 @@
       elements.variantRow.hidden = String(globalThis.WASM_GAME_VARIANT || 'suite') !== 'suite';
     }
     applyConfig();
+    passwordClient = WasmGameFramework.createPasswordClient();
     shell = WasmGameFramework.configure({
       launcher: elements.launcher, card: elements.form, loading: elements.loading,
       runtime: elements.runtime, canvas: elements.canvas,
@@ -233,11 +269,9 @@
         onChange: values => adapter?.preferencesChanged?.(values, context())
       }
     });
-    await loadAdapter();
-    await adapter.init?.(context());
-    shell.resize();
-    initialized = true;
-    await refreshDataGate();
+    const auth = await passwordClient.status();
+    if (auth.required && !auth.authenticated) showPasswordGate(true);
+    else await initializeRuntime();
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(error => {
         console.warn('[wasm-game-framework] PWA service worker registration failed:', error);
@@ -249,6 +283,23 @@
   elements.chooseFiles.addEventListener('click', () => elements.fileInput.click());
   elements.directoryInput.addEventListener('change', () => provision(elements.directoryInput.files).catch(error => setStatus(error.message, true)));
   elements.fileInput.addEventListener('change', () => provision(elements.fileInput.files).catch(error => setStatus(error.message, true)));
+  elements.unlock.addEventListener('click', () => {
+    elements.unlock.disabled = true;
+    setStatus('Checking password…');
+    passwordClient.login(elements.password.value).then(() => {
+      elements.password.value = '';
+      return initializeRuntime();
+    }).catch(error => {
+      setStatus(error?.message || String(error), true);
+      elements.password.select();
+    }).finally(() => { elements.unlock.disabled = false; });
+  });
+  elements.password.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      elements.unlock.click();
+    }
+  });
   elements.variant.addEventListener('change', () => {
     const url = new URL(location.href);
     url.searchParams.set('game', elements.variant.value);

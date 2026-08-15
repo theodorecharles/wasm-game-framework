@@ -9,7 +9,11 @@ trap 'rm -rf -- "${context_dir}"' EXIT
 
 mkdir -p "${context_dir}/framework-dist" "${context_dir}/framework-server"
 cp -a "${framework_dir}/dist/." "${context_dir}/framework-dist/"
-cp "${framework_dir}/server/provisioning.js" "${framework_dir}/server/static-server.js" "${context_dir}/framework-server/"
+cp "${framework_dir}/server/lifecycle.js" \
+  "${framework_dir}/server/password-auth.js" \
+  "${framework_dir}/server/provisioning.js" \
+  "${framework_dir}/server/static-server.js" \
+  "${context_dir}/framework-server/"
 cp "${framework_dir}/package.json" "${context_dir}/package.json"
 cp "${framework_dir}/docker/base/Dockerfile" "${context_dir}/Dockerfile"
 cp "${framework_dir}/docker/static/entrypoint.sh" "${context_dir}/entrypoint.sh"
@@ -27,6 +31,6 @@ if [[ "$installed_version" != "$version" ]]; then
 fi
 
 docker run --rm --entrypoint node "${image}" -e \
-  "require('/opt/wasm-game-framework/server/provisioning.js'); require('/opt/wasm-game-framework/dist/wasm-game-framework.js')"
+  "require('/opt/wasm-game-framework/server/lifecycle.js'); require('/opt/wasm-game-framework/server/password-auth.js'); require('/opt/wasm-game-framework/server/provisioning.js'); require('/opt/wasm-game-framework/dist/wasm-game-framework.js')"
 
 echo "built ${image}"

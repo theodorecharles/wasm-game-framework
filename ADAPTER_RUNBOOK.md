@@ -231,8 +231,8 @@ For a fixed software renderer, declare `4:3` (or `16:9`) and usually
 resize(detail) {
   const width = Math.max(2, detail.requestedWidth);
   const height = Math.max(2, detail.requestedHeight);
-  module.setCanvasSize(width, height, true);
   nativeSetResolution(width, height);
+  module.setCanvasSize(width, height);
 }
 ```
 
@@ -242,6 +242,13 @@ leave a one-second desktop debounce in the browser build. Do not clamp the
 physical render target to the virtual 640×480 menu size. If the engine has a
 real lower limit, document and test the smallest accepted native resolution
 while allowing CSS containment below it without distortion.
+
+Publish forced/native resolution state before changing a canvas whose resize
+listeners can feed its dimensions back into the engine. Do not pass a runtime's
+`noUpdates`/`suppressResize` flag unless the adapter has a separately tested
+native callback that updates the viewport and projection; suppressing the SDL
+resize event while changing only the browser canvas produces a stretched or
+stale renderer.
 
 Use `resizeTransition: "immediate"` only when the adapter follows that rule.
 The framework resamples viewport geometry across multiple frames after Chrome

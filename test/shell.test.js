@@ -13,6 +13,7 @@ const {
   createDataCache,
   createOwnerDataSet,
   createContainerDataClient,
+  createPasswordClient,
   validateOwnerFile,
   mountOwnerFiles
 } = require('../dist/wasm-game-framework.js');
@@ -25,6 +26,7 @@ assert.equal(
 );
 
 assert.equal(typeof createContainerDataClient, 'function');
+assert.equal(typeof createPasswordClient, 'function');
 assert.equal(typeof detectCapabilities, 'function');
 assert.equal(typeof requireCapabilities, 'function');
 assert.equal(typeof createQualityController, 'function');

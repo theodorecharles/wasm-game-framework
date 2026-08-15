@@ -1154,6 +1154,51 @@
     return Object.freeze({ readStatus, ensureRunning });
   }
 
+  function createPasswordClient(options) {
+    const config = options || {};
+    const statusUrl = config.statusUrl || '/auth/status';
+    const loginUrl = config.loginUrl || '/auth/login';
+    const logoutUrl = config.logoutUrl || '/auth/logout';
+
+    async function request(url, init) {
+      const response = await fetch(url, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        ...(init || {})
+      });
+      let body = {};
+      try { body = await response.json(); } catch (_) {}
+      if (!response.ok) {
+        const error = new Error(body.error || `Password request failed with HTTP ${response.status}.`);
+        error.statusCode = response.status;
+        error.status = body;
+        throw error;
+      }
+      return Object.freeze({
+        required: body.required === true,
+        authenticated: body.authenticated !== false
+      });
+    }
+
+    function status() {
+      return request(statusUrl);
+    }
+
+    function login(password) {
+      return request(loginUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password: String(password || '') })
+      });
+    }
+
+    function logout() {
+      return request(logoutUrl, { method: 'POST' });
+    }
+
+    return Object.freeze({ status, login, logout });
+  }
+
   function createContainerDataClient(options) {
     const config = options || {};
     const baseUrl = String(config.baseUrl || '/game-data').replace(/\/$/, '');
@@ -1720,7 +1765,7 @@
   }
 
   const api = Object.freeze({
-    version: '0.7.5',
+    version: '0.7.6',
     DISPLAY_MODES,
     ENGINE_STATES,
     validateAdapterContract,
@@ -1745,6 +1790,7 @@
     ownerFileValidation,
     mountOwnerFiles,
     createContainerDataClient,
+    createPasswordClient,
     createWakeClient
   });
   if (typeof globalThis !== 'undefined') globalThis.WasmGameFramework = api;

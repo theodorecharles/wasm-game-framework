@@ -7,6 +7,7 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const frameworkPackage = require('../package.json');
 
 async function availablePort() {
   const server = net.createServer();
@@ -106,7 +107,7 @@ async function waitFor(url) {
     const workerResponse = await fetch(`${base}/service-worker.js`);
     assert.equal(workerResponse.headers.get('service-worker-allowed'), '/');
     const worker = await workerResponse.text();
-    assert.match(worker, /wasm-game-shell-0\.7\.5/);
+    assert.equal(worker.includes(`wasm-game-shell-${frameworkPackage.version}`), true);
     assert.match(worker, /fetch\(event\.request\)/, 'shell cache must refresh from the network before using its fallback');
     assert.doesNotMatch(worker, /game-data/, 'the service worker must not duplicate owner game-data caching');
     const noVariant = await (await fetch(`${base}/game-data/status`)).json();
@@ -142,6 +143,11 @@ async function waitFor(url) {
 
     const beta = await (await fetch(`${base}/game-data/status?variant=beta`)).json();
     assert.equal(beta.ready, false, 'suite variants have independent readiness');
+    for (const privatePath of ['/data', '/data/', '/data/example.pk3', '/local-data', '/local-data/', '/local-data/example.pk3']) {
+      response = await fetch(`${base}${privatePath}`);
+      assert.equal(response.status, 404, `${privatePath} must not fall through to the canonical document`);
+      assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
+    }
   } finally {
     child.kill('SIGTERM');
     await new Promise(resolve => child.once('exit', resolve));

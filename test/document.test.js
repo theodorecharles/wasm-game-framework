@@ -53,6 +53,9 @@ assert.match(bootstrap, /--wasm-game-framework-background-image/);
 assert.match(bootstrap, /link\[rel="icon"\]/);
 assert.match(html, /data-shell-game-icon/);
 assert.match(html, /data-shell-launch-fullscreen/);
+assert.match(html, /data-shell-password/);
+assert.match(html, /data-shell-password-input/);
+assert.match(html, /autocomplete="current-password"/);
 assert.match(html, /rel="manifest" href="\/app\.webmanifest"/);
 assert.match(html, /meta name="theme-color"/);
 assert.match(html, /rel="icon" href="data:,"/);
@@ -60,5 +63,10 @@ assert.match(bootstrap, /navigator\.serviceWorker\.register\('\/service-worker\.
 assert.match(bootstrap, /app\.webmanifest\?variant=/);
 assert.match(bootstrap, /requestFullscreen\(\{ navigationUI: 'hide' \}\)/);
 assert.match(bootstrap, /fullscreen: elements\.launchFullscreen/);
+assert.match(bootstrap, /createPasswordClient\(\)/);
+assert.match(bootstrap, /passwordClient\.status\(\)/);
+assert.match(bootstrap, /passwordClient\.login\(elements\.password\.value\)/);
+assert.match(bootstrap, /await initializeRuntime\(\)/,
+  'the native adapter must not initialize until password authentication succeeds');
 
 console.log('canonical framework document and adapter bootstrap tests passed');
