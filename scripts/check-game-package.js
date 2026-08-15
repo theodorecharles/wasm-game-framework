@@ -3,7 +3,12 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { normalizeControllerMode, resolvePersistenceRoot, validateAdapterContract } = require('../dist/wasm-game-framework.js');
+const {
+  normalizeControllerMode,
+  normalizeMenuCursor,
+  resolvePersistenceRoot,
+  validateAdapterContract
+} = require('../dist/wasm-game-framework.js');
 const { normalizeManifestCollection } = require('../server/provisioning.js');
 
 function fail(message) {
@@ -54,6 +59,9 @@ function checkConfig(siteRoot, key, config, adapterSource, rootConfig) {
   }
   if (config.pointerFit != null && !['contain', 'fill'].includes(config.pointerFit)) {
     fail(`${key}: pointerFit must be contain or fill`);
+  }
+  if (!normalizeMenuCursor(config.menuCursor)) {
+    fail(`${key}: menuCursor must be native, browser, or none`);
   }
   if (config.resizeTransition != null && !['immediate', 'native'].includes(config.resizeTransition)) {
     fail(`${key}: resizeTransition must be immediate or native`);

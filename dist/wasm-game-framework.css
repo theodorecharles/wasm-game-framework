@@ -204,13 +204,15 @@ html.wasm-game-framework body {
   cursor: wait;
 }
 
-/* Native game menus draw their own cursor. They never hold pointer lock, but
- * the host pointer remains hidden over the surface so users see one cursor. */
-.wasm-game-framework[data-shell-input-captured="true"] [data-shell-canvas],
-.wasm-game-framework[data-shell-engine-state="menu"] [data-shell-canvas],
-.wasm-game-framework[data-shell-engine-state="paused"] [data-shell-canvas],
-.wasm-game-framework[data-shell-engine-state="debrief"] [data-shell-canvas] {
+/* The runtime state machine chooses exactly one pointer policy. Captured
+ * gameplay, native-cursor menus, and pointer-free menus hide the host pointer;
+ * browser-cursor menus explicitly restore it after capture release. */
+.wasm-game-framework[data-shell-host-cursor="hidden"] [data-shell-canvas] {
   cursor: none !important;
+}
+
+.wasm-game-framework[data-shell-host-cursor="visible"] [data-shell-canvas] {
+  cursor: default !important;
 }
 
 .wasm-game-framework [data-shell-advanced] {

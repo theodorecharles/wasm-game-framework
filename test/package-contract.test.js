@@ -72,7 +72,14 @@ try {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /persistence capability must be explicit/);
 
-  console.log('explicit controller/persistence declarations and suite IDBFS isolation checks passed');
+  const invalidCursor = variant('Invalid cursor policy', false);
+  invalidCursor.menuCursor = 'crosshair';
+  writeManifest({ id: 'invalid-cursor', adapter: '/game-adapter.js', ...invalidCursor });
+  result = run();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /menuCursor must be native, browser, or none/);
+
+  console.log('explicit controller/persistence/cursor declarations and suite IDBFS isolation checks passed');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

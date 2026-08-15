@@ -70,7 +70,10 @@
   function mergedConfig(selection) {
     const base = { ...rootConfig };
     delete base.variants;
-    return Object.freeze({ ...base, ...(selection.value || {}), id: selection.key || base.id });
+    const merged = { ...base, ...(selection.value || {}), id: selection.key || base.id };
+    const menuCursor = WasmGameFramework.normalizeMenuCursor(merged.menuCursor);
+    if (!menuCursor) throw new Error('menuCursor must be native, browser, or none.');
+    return Object.freeze({ ...merged, menuCursor });
   }
 
   function applyConfig() {
@@ -301,6 +304,7 @@
       displayMode: config.displayMode || '4:3', pixelated: Boolean(config.pixelated),
       syncBackbuffer: config.syncBackbuffer === true, nativeManaged: config.nativeManaged === true,
       maxDpr: config.maxDpr || 1, pointerLock: config.pointerLock !== false,
+      menuCursor: config.menuCursor,
       pointerWidth: config.pointerWidth, pointerHeight: config.pointerHeight,
       pointerFit: config.pointerFit,
       resizeTransition: config.resizeTransition,

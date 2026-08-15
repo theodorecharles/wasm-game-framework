@@ -50,6 +50,10 @@ const { validateAdapterContract } = require('../dist/wasm-game-framework.js');
 assert.deepEqual(validateAdapterContract({ pointerLock: false }, { start() {} }), {
   valid: true, nativeResize: false, absolutePointer: false, pointerCapture: false, controllerMode: 'disabled'
 });
+assert.equal(require('../dist/wasm-game-framework.js').normalizeMenuCursor(), 'native');
+assert.equal(require('../dist/wasm-game-framework.js').normalizeMenuCursor(' Browser '), 'browser');
+assert.equal(require('../dist/wasm-game-framework.js').normalizeMenuCursor('none'), 'none');
+assert.equal(require('../dist/wasm-game-framework.js').normalizeMenuCursor('crosshair'), null);
 assert.throws(
   () => validateAdapterContract({ nativeManaged: true, pointerLock: false }, { start() {} }),
   /resize\(\) is required when nativeManaged is enabled/
@@ -118,11 +122,22 @@ assert.deepEqual(resolveDisplayRect(1633, 594, 'dynamic', {
 });
 assert.match(
   require('node:fs').readFileSync(require('node:path').join(__dirname, '../dist/wasm-game-framework.css'), 'utf8'),
-  /data-shell-engine-state="menu"/,
-  'the shared shell must hide the host cursor while a native menu owns it'
+  /data-shell-host-cursor="hidden"/,
+  'the shared shell must hide the host cursor when the runtime cursor policy requires it'
 );
 const sharedCss = require('node:fs').readFileSync(require('node:path').join(__dirname, '../dist/wasm-game-framework.css'), 'utf8');
 const sharedJs = require('node:fs').readFileSync(require('node:path').join(__dirname, '../dist/wasm-game-framework.js'), 'utf8');
+assert.match(sharedCss, /data-shell-host-cursor="visible"[^}]+cursor: default !important/s,
+  'cursorless native menus must explicitly restore the browser pointer');
+assert.match(sharedJs, /const menuCursor = normalizeMenuCursor\(config\.menuCursor\)/,
+  'menuCursor must be normalized before runtime policy is applied');
+assert.match(sharedJs, /ENGINE_STATES\.LOADING,[\s\S]+ENGINE_STATES\.MENU,[\s\S]+ENGINE_STATES\.PAUSED,[\s\S]+ENGINE_STATES\.DEBRIEF/,
+  'the native cursor policy must cover every non-captured runtime UI state');
+assert.match(sharedJs,
+  /function publishPointer\(event\)[\s\S]+const captured = inputCaptured\(\);[\s\S]+movementX:[\s\S]+movementY:[\s\S]+captured: true[\s\S]+pointerPosition\(event\)[\s\S]+captured: false/,
+  'pointerMove must deliver relative deltas under capture and absolute mapped coordinates after release');
+assert.match(sharedJs, /menuCursor === MENU_CURSOR_MODES\.NONE[\s\S]+menuCursorStates\.has\(engineState\)/,
+  'menuCursor=none must suppress released menu pointer callbacks');
 assert.ok(
   sharedJs.indexOf("canvas.addEventListener('pointerup', publishPointerButton)") <
     sharedJs.indexOf("canvas.addEventListener('pointerup', captureAfterInteraction)"),

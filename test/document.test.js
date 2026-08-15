@@ -54,6 +54,10 @@ assert.match(bootstrap, /createPersistenceManager\(/,
   'the canonical bootstrap must expose variant-scoped save and configuration persistence');
 assert.match(bootstrap, /persistenceChanged/);
 assert.match(bootstrap, /displayMode: config\.displayMode/);
+assert.match(bootstrap, /normalizeMenuCursor\(merged\.menuCursor\)/,
+  'the canonical bootstrap must normalize the declarative menu cursor policy');
+assert.match(bootstrap, /menuCursor: config\.menuCursor/,
+  'the canonical bootstrap must pass normalized menu cursor policy into the runtime shell');
 assert.match(bootstrap, /adapter\?\.readEngineState/);
 assert.match(bootstrap, /adapter\?\.readCaptureIntent/,
   'the adapter must be able to reserve capture through an honest loading state');

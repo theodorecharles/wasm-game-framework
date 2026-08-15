@@ -6,7 +6,13 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.9.2**
+Current release: **0.9.3**
+
+Version 0.9.3 adds the declarative `menuCursor` runtime policy: `native` for an
+engine-rendered pointer, `browser` for the host pointer, or `none` for a
+pointer-free menu. Existing manifests keep their previous behavior because
+omission defaults to `native`. Captured `pointerMove` callbacks now carry
+relative gameplay deltas instead of being discarded.
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -22,7 +28,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.9.2
+./scripts/build-base-image.sh wasm-game-framework:0.9.3
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -91,6 +97,7 @@ Then it calls `WasmGameFramework.configure()` with only engine-specific policy:
 
 - a `4:3`, `16:9`, or `dynamic` display contract;
 - whether canvas pixels should be crisp;
+- whether released runtime menus use a native, browser, or no cursor;
 - whether a graphics profile and dynamic-quality controls are meaningful;
 - whether multiplayer identity is currently meaningful;
 - an optional resize callback for engines that can change their backbuffer.
@@ -118,6 +125,7 @@ The declarative boundary looks like this:
   },
   "displayMode": "dynamic",
   "nativeManaged": true,
+  "menuCursor": "browser",
   "controller": {
     "mode": "wasdMouse",
     "label": "WASD + mouse mapping",
@@ -263,8 +271,19 @@ Native menus declare `pointerWidth` and `pointerHeight` in `wasm-game.json`.
 The framework maps client coordinates through the canvas's actual CSS rectangle
 and calls `pointerMove(detail, event, context)` and
 `pointerButton(detail, event, context)` in that virtual coordinate space.
-Menu, paused, and debrief states hide the host cursor over the canvas, leaving
-only the engine-rendered cursor visible without acquiring pointer lock.
+Set `menuCursor: "native"` when the runtime draws its own menu pointer; the
+framework hides the host pointer while continuing to publish mapped absolute
+pointer callbacks. Use `"browser"` to keep the host pointer visible and still
+publish those callbacks. Use `"none"` for pointer-free menus: the host pointer
+is hidden and released menu/loading/pause/debrief pointer callbacks are
+suppressed. Captured gameplay always hides the host pointer and still publishes
+relative movement. Omitted `menuCursor` defaults to `"native"` for backward
+compatibility.
+The same `pointerMove(detail, event, context)` hook has two explicit shapes:
+released events carry mapped `x`, `y`, normalization/rectangle fields, and
+`captured: false`; captured events carry only `movementX`, `movementY`,
+`state`, `canvas`, and `captured: true`. Adapters must branch on
+`detail.captured` and never reuse absolute menu coordinates for gameplay look.
 Widescreen renderers whose native UI remains centered at a fixed aspect set
 `pointerFit: "contain"`; the transform then removes the exact letterbox or
 pillarbox offset before converting into native menu coordinates.

@@ -59,6 +59,7 @@ a representative dynamic renderer:
   "pointerWidth": 640,
   "pointerHeight": 480,
   "pointerFit": "contain",
+  "menuCursor": "native",
   "pointerLock": true,
   "fullscreen": true,
   "controller": {
@@ -82,6 +83,13 @@ Use `4:3` or `16:9` when the renderer must retain that aspect. Use `dynamic`
 only when the native renderer can change its actual backbuffer and projection.
 `pointerWidth` and `pointerHeight` describe the native menu coordinate system,
 not the render target. A 640×480 menu can live over a 1720×900 backbuffer.
+Declare `menuCursor: "native"` when the runtime visibly renders its own
+pointer in loading/menu/pause/debrief UI. Use `"browser"` when those screens
+need mapped pointer callbacks but depend on the host pointer. Use `"none"` for
+pointer-free menus; the framework hides the host pointer and suppresses their
+released pointer move/button callbacks. The property defaults to `"native"`
+only so older manifests keep their existing behavior. New and audited
+manifests should always declare it.
 
 Launcher `description` is optional. Normal launcher and PWA copy describes the
 game, not setup, file placement, storage, or caching. Put file instructions in
@@ -198,9 +206,11 @@ Acceptance sequence:
 
 ```text
 launcher: released
-native menu: released, host cursor hidden over canvas
+native-cursor menu: released, host cursor hidden over canvas
+browser-cursor menu: released, browser cursor visible
+pointer-free menu: released, host cursor hidden and pointer callbacks suppressed
 JOIN/New Game click: trusted capture intent
-loading: honest loading state, intent retained
+loading: honest loading state, intent retained; cursor follows menuCursor policy when released
 first controllable frame: gameplay + captured
 Escape: paused/menu + released
 Resume click: captured again
@@ -214,8 +224,8 @@ rectangle into the declared virtual menu size. The adapter forwards the
 resulting absolute `detail.x`/`detail.y` and button state to the native input
 queue.
 
-- Initialize each native main-menu cursor to a known virtual point, normally
-  the center.
+- For `menuCursor: "native"`, initialize each native main-menu cursor to a known
+  virtual point, normally the center.
 - Reset the adapter's previous absolute point only on an actual transition into
   that menu.
 - Preserve independent in-game menu initialization when the engine has one.
@@ -224,11 +234,20 @@ queue.
 - Do not add browser offsets, widescreen bias, DPR, or CSS compensation in the
   adapter; the framework already removed those.
 - Relative gameplay mouse movement uses `movementX`/`movementY` only while
-  captured. It must not reuse absolute menu coordinates.
+  captured. The frozen detail is `{ movementX, movementY, state, canvas,
+  captured: true }`; it deliberately contains no `x`/`y` fields. Released
+  details retain the absolute mapping fields and add `captured: false`.
+  Adapters branch on `detail.captured` and must not reuse absolute menu
+  coordinates for gameplay look.
 
-Verify the native and hidden host cursor at the center and four near-corner
-points, before and after both a narrow and wide resize. Verify the main menu
-and in-game menu separately.
+For `menuCursor: "native"`, verify the native and hidden host cursor at the
+center and four near-corner points, before and after both a narrow and wide
+resize. For `menuCursor: "browser"`, verify the browser cursor remains visible
+and pointer callbacks still reach the menu. For `menuCursor: "none"`, verify
+both that the host cursor is hidden and that pointer callbacks are suppressed.
+Verify the main menu and in-game menu separately. Under every policy, captured
+gameplay must hide the browser cursor, deliver relative pointer deltas, and
+restore the declared released-state policy immediately after capture loss.
 
 ## 7. Resize the real backbuffer
 
@@ -455,7 +474,7 @@ For every runnable variant record evidence for:
 1. missing-data setup and ready-state launcher;
 2. second load from browser cache without setup UI;
 3. player name/profile/FPS handoff;
-4. native main-menu pointer center and corners;
+4. declared native/browser main-menu pointer policy, including center and corners;
 5. narrow, wide, fullscreen-enter, and fullscreen-exit native resolution;
 6. New Game/JOIN loading state and first controllable frame;
 7. automatic capture, WASD, relative mouse, Escape release, and Resume capture;
@@ -480,6 +499,11 @@ unreached behavior as passed because its adapter contains a plausible hook.
   identity immediately before connection.
 - **Main cursor offset but pause cursor works:** main-menu native cursor was not
   initialized or its virtual origin differs; do not change framework mapping.
+- **No cursor in a released menu:** the game has no rendered menu pointer but
+  still declares (or defaults to) `menuCursor: "native"`; use `"browser"` if
+  the menu accepts pointer input, or `"none"` if it does not.
+- **Two cursors in a released menu:** the runtime renders a pointer but declares
+  `menuCursor: "browser"`; set it to `"native"`.
 - **One-second black area during resize:** desktop video-restart debounce remains
   in the browser path.
 - **Canvas stretches:** CSS resized but native backbuffer/projection did not, or

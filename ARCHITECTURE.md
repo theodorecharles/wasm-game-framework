@@ -22,9 +22,11 @@ fullscreen from a delayed native callback.
 Pointer coordinates are transformed by the framework from the live CSS canvas
 rectangle into each engine's declared native menu space. Adapters never carry
 page-offset compensation. Fixed-aspect native menus inside dynamic canvases use
-the same centered contain geometry as display fitting. Engine state remains the capture authority: menus
-release pointer lock and hide the host cursor over the native surface, while
-gameplay alone may acquire relative input.
+the same centered contain geometry as display fitting. Engine state remains the
+capture authority: menus release pointer lock, while the declarative
+`menuCursor` policy selects an engine-rendered pointer, the browser pointer, or
+a pointer-free menu. Captured gameplay always hides the host pointer and
+receives relative movement deltas.
 
 The portfolio has one dependency direction. Nothing at a lower layer is
 copied back upward and no downstream repository submits patches upstream.

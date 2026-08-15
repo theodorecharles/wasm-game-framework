@@ -78,6 +78,18 @@
     CUSTOM: 'custom'
   });
 
+  const MENU_CURSOR_MODES = Object.freeze({
+    NATIVE: 'native',
+    BROWSER: 'browser',
+    NONE: 'none'
+  });
+
+  function normalizeMenuCursor(value) {
+    if (value == null || String(value).trim() === '') return MENU_CURSOR_MODES.NATIVE;
+    const mode = String(value).trim().toLowerCase();
+    return Object.values(MENU_CURSOR_MODES).includes(mode) ? mode : null;
+  }
+
   function normalizeControllerMode(value) {
     const declaration = value && typeof value === 'object' ? value.mode : value;
     const mode = String(declaration || CONTROLLER_MODES.DISABLED).trim().toLowerCase();
@@ -96,6 +108,8 @@
     };
 
     requireMethod('start', 'to start the native runtime');
+    const menuCursor = normalizeMenuCursor(config.menuCursor);
+    if (!menuCursor) errors.push('menuCursor must be native, browser, or none.');
     if (config.nativeManaged === true) {
       requireMethod('resize', 'when nativeManaged is enabled');
     }
@@ -2242,9 +2256,25 @@
     let preferences = null;
     let controller = null;
     let controllerSelectionChanged = null;
+    const menuCursor = normalizeMenuCursor(config.menuCursor);
+    if (!menuCursor) throw new Error('menuCursor must be native, browser, or none.');
+    const menuCursorStates = new Set([
+      ENGINE_STATES.LOADING,
+      ENGINE_STATES.MENU,
+      ENGINE_STATES.PAUSED,
+      ENGINE_STATES.DEBRIEF
+    ]);
 
     function inputCaptured() {
       return Boolean(canvas && document.pointerLockElement === canvas);
+    }
+
+    function updateHostCursor(captured) {
+      const hidden = Boolean(captured) ||
+        (menuCursor !== MENU_CURSOR_MODES.BROWSER && menuCursorStates.has(engineState));
+      html.dataset.shellMenuCursor = menuCursor;
+      html.dataset.shellHostCursor = hidden ? 'hidden' : 'visible';
+      return html.dataset.shellHostCursor;
     }
 
     function readCaptureIntent() {
@@ -2266,6 +2296,7 @@
         }
       }
       html.dataset.shellInputCaptured = String(captured);
+      updateHostCursor(captured);
       if (typeof config.onInputCaptureChange === 'function') {
         config.onInputCaptureChange(captured);
       }
@@ -2327,9 +2358,18 @@
     }
 
     function publishPointer(event) {
-      if (!canvas || inputCaptured()) return;
-      const point = pointerPosition(event);
-      const detail = Object.freeze({ ...point, state: engineState, canvas });
+      if (!canvas) return;
+      const captured = inputCaptured();
+      if (!captured && menuCursor === MENU_CURSOR_MODES.NONE && menuCursorStates.has(engineState)) return;
+      const detail = captured
+        ? Object.freeze({
+            movementX: Number.isFinite(Number(event.movementX)) ? Number(event.movementX) : 0,
+            movementY: Number.isFinite(Number(event.movementY)) ? Number(event.movementY) : 0,
+            state: engineState,
+            canvas,
+            captured: true
+          })
+        : Object.freeze({ ...pointerPosition(event), state: engineState, canvas, captured: false });
       config.onPointerMove?.(detail, event);
       window.dispatchEvent(new CustomEvent('wasm-game-framework-pointer', { detail }));
     }
@@ -2353,6 +2393,7 @@
 
     function publishPointerButton(event) {
       if (!canvas || inputCaptured()) return;
+      if (menuCursor === MENU_CURSOR_MODES.NONE && menuCursorStates.has(engineState)) return;
       const point = pointerPosition(event);
       const detail = Object.freeze({ ...point, state: engineState, canvas, button: event.button, pressed: event.type === 'pointerdown' });
       const gestureKey = pointerGestureKey(event);
@@ -2408,6 +2449,7 @@
       canvas.setAttribute('data-shell-pixelated', pixelated ? 'true' : 'false');
     }
     html.dataset.shellEngineState = engineState;
+    updateHostCursor(inputCaptured());
 
     if (config.desktopNotice !== false && !document.querySelector('[data-shell-desktop-notice]')) {
       const notice = document.createElement('div');
@@ -2613,6 +2655,7 @@
         canvas?.focus?.({ preventScroll: true });
         if (stateOptions?.capture === true) requestInputCapture(stateOptions.event);
       }
+      updateHostCursor(inputCaptured());
       const detail = Object.freeze({ prior, state: engineState, captured: inputCaptured() });
       config.onEngineStateChange?.(detail);
       window.dispatchEvent(new CustomEvent('wasm-game-framework-engine-state', { detail }));
@@ -2623,7 +2666,8 @@
       config: Object.freeze({
         displayMode: normalizeDisplayMode(config.displayMode),
         fit: config.fit === 'fill' ? 'fill' : 'contain',
-        aspect: positive(config.aspect, 4 / 3)
+        aspect: positive(config.aspect, 4 / 3),
+        menuCursor
       }),
       launcher,
       loading,
@@ -2703,12 +2747,14 @@
   }
 
   const api = Object.freeze({
-    version: '0.9.2',
+    version: '0.9.3',
     DISPLAY_MODES,
     ENGINE_STATES,
     CONTROLLER_MODES,
+    MENU_CURSOR_MODES,
     validateAdapterContract,
     normalizeControllerMode,
+    normalizeMenuCursor,
     configure,
     fitRect,
     mapPointerPoint,

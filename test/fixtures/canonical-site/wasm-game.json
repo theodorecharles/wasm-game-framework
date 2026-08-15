@@ -6,6 +6,7 @@
   "icon": "/fixture-background.svg",
   "background": "/fixture-background.svg",
   "displayMode": "4:3",
+  "menuCursor": "browser",
   "canvasWidth": 320,
   "canvasHeight": 240,
   "graphics": false,
