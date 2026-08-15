@@ -26,4 +26,7 @@ if [[ "$installed_version" != "$version" ]]; then
   exit 1
 fi
 
+docker run --rm --entrypoint node "${image}" -e \
+  "require('/opt/wasm-game-framework/server/provisioning.js'); require('/opt/wasm-game-framework/dist/wasm-game-framework.js')"
+
 echo "built ${image}"

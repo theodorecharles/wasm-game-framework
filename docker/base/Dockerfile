@@ -8,6 +8,7 @@ LABEL org.opencontainers.image.title="WASM Game Framework" \
 
 COPY entrypoint.sh /usr/local/bin/wasm-game-entrypoint
 COPY framework-dist/ /opt/shared-shell/
+COPY framework-dist/ /opt/wasm-game-framework/dist/
 COPY framework-server/ /opt/wasm-game-framework/server/
 COPY package.json /opt/wasm-game-framework/package.json
 
