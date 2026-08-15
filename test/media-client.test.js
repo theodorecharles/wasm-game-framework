@@ -77,6 +77,31 @@ const previous = {
   assert.deepEqual(downloads, [entries[0].id, entries[1].id, entries[0].id],
     'a deselected entry must be downloaded again after the selected-only cache changes');
 
+  const directClient = createContainerDataClient({
+    media: entries[0].id, mediaExplicit: true, mediaSource: 'query'
+  });
+  const directLibrary = await directClient.media.status();
+  assert.equal(directClient.media.selected(directLibrary), entries[0].id);
+  directClient.media.select(entries[1].id, directLibrary);
+  assert.equal(directClient.media.selected(directLibrary), entries[1].id,
+    'a query-selected media entry must remain changeable');
+
+  const missingClient = createContainerDataClient({
+    media: 'c'.repeat(32), mediaExplicit: true, mediaSource: 'query'
+  });
+  assert.equal(missingClient.media.selected(directLibrary), '',
+    'an unavailable explicit media ID must never select the first installed entry');
+  await assert.rejects(missingClient.media.load(undefined, { validationOptions }), error =>
+    error.code === 'MEDIA_SELECTION_UNAVAILABLE');
+
+  const lockedClient = createContainerDataClient({
+    media: entries[0].id, mediaExplicit: true, mediaLocked: true, mediaSource: 'deployment'
+  });
+  assert.equal(lockedClient.media.select(entries[1].id, directLibrary), entries[0].id,
+    'a deployment lock must ignore downstream selection attempts');
+  await assert.rejects(lockedClient.media.load(entries[1].id, { validationOptions }), error =>
+    error.code === 'MEDIA_SELECTION_LOCKED');
+
   const tooLargeStatus = global.fetch;
   global.fetch = async input => {
     const response = await tooLargeStatus(input);

@@ -17,6 +17,8 @@ const {
   createContainerDataClient,
   createPasswordClient,
   mediaLibraryLauncherVisible,
+  normalizeMediaEntryId,
+  resolveMediaSelection,
   validateOwnerFile,
   mountOwnerFiles
 } = require('../dist/wasm-game-framework.js');
@@ -37,6 +39,42 @@ assert.equal(mediaLibraryLauncherVisible({ configured: true, ready: true, launch
 assert.equal(mediaLibraryLauncherVisible({ configured: true, ready: true }), true,
   'ROM libraries retain the current visible launcher UI by default');
 assert.equal(mediaLibraryLauncherVisible(null), false);
+const mediaEntries = [
+  { id: 'a'.repeat(32), label: 'Alpha' },
+  { id: 'b'.repeat(32), label: 'Beta' }
+];
+assert.equal(normalizeMediaEntryId('A'.repeat(32)), 'a'.repeat(32));
+assert.equal(normalizeMediaEntryId('not-an-entry'), null);
+assert.deepEqual(resolveMediaSelection({ entries: mediaEntries }, {}).id, mediaEntries[0].id,
+  'a non-explicit media library retains its first-entry fallback');
+assert.equal(resolveMediaSelection({ entries: mediaEntries }, { stored: mediaEntries[1].id }).id, mediaEntries[1].id,
+  'a saved installed media selection wins over the default');
+assert.deepEqual(resolveMediaSelection({ entries: mediaEntries }, {
+  requested: mediaEntries[1].id, requestedPresent: true
+}), {
+  id: mediaEntries[1].id, requestedId: mediaEntries[1].id, source: 'query', explicit: true,
+  locked: false, valid: true, available: true
+});
+const missingMedia = resolveMediaSelection({ entries: mediaEntries }, {
+  requested: 'c'.repeat(32), requestedPresent: true
+});
+assert.equal(missingMedia.id, '', 'an unavailable explicit media ID must not fall back to the first entry');
+assert.equal(missingMedia.requestedId, 'c'.repeat(32));
+assert.equal(missingMedia.explicit, true);
+assert.equal(missingMedia.available, false);
+const invalidMedia = resolveMediaSelection({ entries: mediaEntries }, {
+  requested: 'bad', requestedPresent: true
+});
+assert.equal(invalidMedia.id, '');
+assert.equal(invalidMedia.valid, false);
+assert.equal(resolveMediaSelection({ entries: mediaEntries }, {
+  requested: '', requestedPresent: true
+}).valid, false, 'an explicit empty media query must fail closed');
+const lockedMedia = resolveMediaSelection({ entries: mediaEntries }, {
+  locked: mediaEntries[0].id, requested: mediaEntries[1].id, requestedPresent: true
+});
+assert.equal(lockedMedia.id, mediaEntries[0].id, 'a deployment media lock must override a query selection');
+assert.equal(lockedMedia.locked, true);
 assert.equal(typeof detectCapabilities, 'function');
 assert.equal(typeof requireCapabilities, 'function');
 assert.equal(typeof createQualityController, 'function');

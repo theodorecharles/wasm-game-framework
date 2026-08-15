@@ -8,7 +8,8 @@
     variantRow: byId('variant-row'), variant: byId('game-variant'), provisioning: byId('data-provisioning'),
     instructions: byId('data-instructions'), chooseDirectory: byId('choose-directory'),
     chooseFiles: byId('choose-files'), fileInput: byId('game-files'), directoryInput: byId('game-directory'),
-    mediaLibrary: byId('media-library'), mediaEntry: byId('media-entry'), mediaStatus: byId('media-status'),
+    mediaLibrary: byId('media-library'), mediaEntryRow: byId('media-entry-row'),
+    mediaEntry: byId('media-entry'), mediaStatus: byId('media-status'),
     addMediaDirectory: byId('add-media-directory'), addMediaFiles: byId('add-media-files'),
     mediaFiles: byId('media-files'), mediaDirectory: byId('media-directory'),
     setupTokenRow: byId('setup-token-row'), setupToken: byId('setup-token'),
@@ -31,6 +32,7 @@
   let variant;
   let shell;
   let dataClient;
+  let mediaDeployment;
   let persistence;
   let passwordClient;
   let adapter;
@@ -67,6 +69,34 @@
     return { key, locked, value: variants[key] };
   }
 
+  function selectedMediaDeployment() {
+    const injected = String(globalThis.WASM_GAME_MEDIA || '').trim();
+    const params = new URLSearchParams(location.search);
+    if (injected) return Object.freeze({ value: injected, explicit: true, locked: true, source: 'deployment' });
+    return Object.freeze({
+      value: params.get('media') || '', explicit: params.has('media'), locked: false, source: 'query'
+    });
+  }
+
+  function updateManifestLink(mediaId) {
+    const manifestLink = document.querySelector('link[rel="manifest"]');
+    if (!manifestLink) return;
+    const params = new URLSearchParams({ variant });
+    const id = WasmGameFramework.normalizeMediaEntryId(mediaId);
+    if (id) params.set('media', id);
+    manifestLink.href = `/app.webmanifest?${params}`;
+  }
+
+  function updateMediaUrl(mediaId) {
+    if (mediaDeployment.locked) return;
+    const id = WasmGameFramework.normalizeMediaEntryId(mediaId);
+    const url = new URL(location.href);
+    if (id) url.searchParams.set('media', id);
+    else url.searchParams.delete('media');
+    history.replaceState(history.state, '', url.href);
+    updateManifestLink(id);
+  }
+
   function mergedConfig(selection) {
     const base = { ...rootConfig };
     delete base.variants;
@@ -85,8 +115,7 @@
     document.documentElement.dataset.wasmGameVariant = variant;
     document.documentElement.dataset.wasmGameMode = selection.locked ? 'single' : 'suite';
     document.title = config.title || 'WASM Game';
-    const manifestLink = document.querySelector('link[rel="manifest"]');
-    if (manifestLink) manifestLink.href = `/app.webmanifest?variant=${encodeURIComponent(variant)}`;
+    updateManifestLink(mediaDeployment.value);
     const themeColor = config.pwa?.themeColor || config.theme?.accent || '#111827';
     let themeMeta = document.querySelector('meta[name="theme-color"]');
     if (!themeMeta) {
@@ -149,7 +178,13 @@
     } else {
       document.documentElement.style.setProperty('--wasm-game-framework-background-image', 'none');
     }
-    dataClient = WasmGameFramework.createContainerDataClient({ variant: rootConfig.variants ? variant : '' });
+    dataClient = WasmGameFramework.createContainerDataClient({
+      variant: rootConfig.variants ? variant : '',
+      media: mediaDeployment.value,
+      mediaExplicit: mediaDeployment.explicit,
+      mediaLocked: mediaDeployment.locked,
+      mediaSource: mediaDeployment.source
+    });
     const persistenceConfig = config.persistence === false ? null : (config.persistence || {});
     const persistenceNamespace = persistenceConfig &&
       (persistenceConfig.namespace || `${rootConfig.persistenceNamespace || rootConfig.id || 'wasm-game'}-${variant}`);
@@ -215,23 +250,35 @@
   async function refreshDataGate() {
     const state = await dataClient.applyGate();
     const library = state.mediaLibrary;
-    elements.mediaLibrary.hidden = !WasmGameFramework.mediaLibraryLauncherVisible(library);
+    const selection = library?.selection;
+    const unavailableSelection = library ? Boolean(selection?.explicit && !selection.available) : mediaDeployment.explicit;
+    elements.mediaLibrary.hidden = !library ||
+      (!WasmGameFramework.mediaLibraryLauncherVisible(library) && !unavailableSelection);
+    elements.mediaEntryRow.hidden = mediaDeployment.locked;
     if (library?.configured) {
       const entries = library.entries.map(entry => ({ value: entry.id, label: entry.label }));
-      if (!entries.length) entries.push({ value: '', label: 'No media installed' });
+      if (unavailableSelection) entries.unshift({ value: '', label: 'Requested media unavailable' });
+      else if (!entries.length) entries.push({ value: '', label: 'No media installed' });
       options(elements.mediaEntry, entries, library.selectedId);
-      elements.mediaEntry.disabled = !library.entries.length;
-      text(elements.mediaStatus, library.entries.length ?
+      elements.mediaEntry.disabled = mediaDeployment.locked || !library.entries.length;
+      text(elements.mediaStatus, unavailableSelection ?
+        (mediaDeployment.locked ? 'The configured media is unavailable.' : 'The requested media is unavailable.') :
+        (library.entries.length ?
         `${library.entries.length} media ${library.entries.length === 1 ? 'entry' : 'entries'} available.` :
-        (library.minimumEntries > 0 ? 'Add media to continue.' : 'No media installed.'));
+        (library.minimumEntries > 0 ? 'Add media to continue.' : 'No media installed.')));
     }
     elements.play.disabled = !state.ready || !adapter ||
-      Boolean(library?.configured && library.minimumEntries > 0 && !library.selectedId);
+      unavailableSelection || Boolean(library?.configured && library.minimumEntries > 0 && !library.selectedId);
     if (state.variantRequired) throw new Error('Select a game before provisioning its data.');
     const fixedReady = library ? state.fixedReady : state.ready;
-    setStatus(state.ready ? '' : (!fixedReady ?
+    setStatus(unavailableSelection ?
+      (library ? (mediaDeployment.locked ?
+        'The configured media is unavailable. Add it to continue.' :
+        'The requested media is unavailable. Choose another entry or add it to continue.') :
+        'This deployment does not provide a media library for the requested selection.') :
+      (state.ready ? '' : (!fixedReady ?
       (config.provisioningText || `Install ${config.title || variant} game data once to continue.`) :
-      (config.mediaProvisioningText || 'Add media to continue.')));
+      (config.mediaProvisioningText || 'Add media to continue.'))));
     return state;
   }
 
@@ -279,9 +326,10 @@
 
   async function provisionMedia(files) {
     setStatus('Validating and installing media…');
-    await dataClient.media.upload(Array.from(files || []), {
+    const result = await dataClient.media.upload(Array.from(files || []), {
       onProgress: detail => setStatus(`${detail.phase} ${detail.name || 'media'}…`)
     });
+    if (!mediaDeployment.locked) updateMediaUrl(dataClient.media.selected(result.library));
     await refreshDataGate();
   }
 
@@ -290,6 +338,7 @@
       if (!response.ok) throw new Error(`Game configuration failed with HTTP ${response.status}.`);
       return response.json();
     }));
+    mediaDeployment = selectedMediaDeployment();
     if (rootConfig.variants) {
       const keys = Object.keys(rootConfig.variants);
       options(elements.variant, keys.map(key => ({ value: key, label: rootConfig.variants[key].title || key })),
@@ -360,8 +409,9 @@
   elements.mediaFiles.addEventListener('change', () => provisionMedia(elements.mediaFiles.files).catch(error => setStatus(error.message, true)));
   elements.mediaEntry.addEventListener('change', () => {
     dataClient.media.status().then(library => {
-      dataClient.media.select(elements.mediaEntry.value, library);
-      elements.play.disabled = !elements.mediaEntry.value || !adapter;
+      const id = dataClient.media.select(elements.mediaEntry.value, library);
+      updateMediaUrl(id);
+      return refreshDataGate();
     }).catch(error => setStatus(error.message, true));
   });
   elements.unlock.addEventListener('click', () => {

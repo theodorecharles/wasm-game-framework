@@ -6,13 +6,12 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.9.3**
+Current release: **0.9.4**
 
-Version 0.9.3 adds the declarative `menuCursor` runtime policy: `native` for an
-engine-rendered pointer, `browser` for the host pointer, or `none` for a
-pointer-free menu. Existing manifests keep their previous behavior because
-omission defaults to `native`. Captured `pointerMove` callbacks now carry
-relative gameplay deltas instead of being discarded.
+Version 0.9.4 adds stable direct-media launch links and deployment locks for
+console libraries. A suite may open `/?game=ps1&media=<32-hex-entry-id>`, while
+`WASM_GAME_MEDIA=<id>` locks an image to one installed entry. An unavailable
+explicit selection fails closed instead of silently launching the first entry.
 
 Live example: [Wolfenstein: Enemy Territory](https://wolfet.tedcharles.net/)
 uses the framework's launcher, persistent game-data provisioning, browser
@@ -28,7 +27,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.9.3
+./scripts/build-base-image.sh wasm-game-framework:0.9.4
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -196,14 +195,29 @@ library selectable after startup. Set it to `false` for a single-install media
 flow: the selector and Add-media controls remain available while provisioning
 is incomplete, then disappear once the required entry is ready.
 
-The shared browser client exposes `dataClient.media.status()`, `selected()`,
-`select(id, library)`, `upload(files, options)`, `detail(id)`, and
-`load(id?, options)`. `load()` downloads and validates only the selected entry,
+The shared browser client exposes `dataClient.media.status()`,
+`selected(library)`, `selection(library)`, `select(id, library)`,
+`upload(files, options)`, `detail(id)`, and `load(id?, options)`. `load()`
+downloads and validates only the selected entry,
 returns its relative mount names and primary file, and clears the prior
 selection's versioned cache. If an entry exceeds `maxBrowserCacheBytes`, it
 fails with `MEDIA_RANDOM_ACCESS_REQUIRED`; a downstream streaming/random-access
 adapter is required rather than silently materializing an unsafe amount of
 memory.
+
+Installed entries have stable 32-character hexadecimal IDs. In a suite, use
+`/?game=ps1&media=<id>` to preselect one entry without replacing the normal
+console and game selectors. The user may choose a different entry; the
+launcher stores the change and updates `media` in the current URL. If an
+explicit ID is malformed or not installed, Play stays disabled and the
+launcher explains that the requested media is unavailable. It never falls back
+to another entry.
+
+Set `WASM_GAME_MEDIA=<id>` to hard-lock a deployment to one entry. The server
+publishes the value through `/wasm-game-config.js`, the launcher hides only the
+media selector, and Add-media controls remain available when that entry still
+needs to be installed. A hard lock takes precedence over `?media=` and cannot
+be bypassed by an adapter calling `load()` with another ID.
 
 The adapter owns native engine seams and validation policy. The framework owns
 all launcher, provisioning, loading, preference, canvas, mobile notice, and
@@ -571,6 +585,9 @@ shared engine family. A suite image leaves its title selector visible. A
 single-title image injects `WASM_GAME_VARIANT` before the launcher loads; the
 same launcher then selects and locks that title and hides only the selector.
 URL query selection remains available in suite builds for portal shortcuts.
+Media-library suites use `?media=<id>` beside `?game=<variant>` for an optional
+direct-game shortcut. A deployment may instead set `WASM_GAME_MEDIA=<id>` to
+lock the media entry while retaining the same launcher and adapter.
 
 ```html
 <script src="/wasm-game-config.js"></script>

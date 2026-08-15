@@ -15,6 +15,10 @@ const shellRoot = path.resolve(process.env.WASM_GAME_SHELL_ROOT || '/opt/shared-
 const dataRoot = path.resolve(process.env.WASM_GAME_DATA_ROOT || '/data');
 const port = Number(process.env.WASM_GAME_HTTP_PORT || 8088);
 const variant = String(process.env.WASM_GAME_VARIANT || 'suite');
+const media = String(process.env.WASM_GAME_MEDIA || '').trim().toLowerCase();
+if (media && !/^[a-f0-9]{32}$/.test(media)) {
+  throw new Error('WASM_GAME_MEDIA must contain exactly 32 hexadecimal characters.');
+}
 const setupToken = String(process.env.WASM_SETUP_TOKEN || '');
 const manifestPath = path.resolve(process.env.WASM_GAME_DATA_MANIFEST || path.join(siteRoot, 'wasm-game-data.json'));
 const canonicalDocument = fs.existsSync(path.join(siteRoot, 'wasm-game.json'));
@@ -80,7 +84,13 @@ function pwaManifest(url) {
   const shortName = String(pwa.shortName || title).slice(0, 30);
   const selectedKey = String(selected.id || '').toLowerCase();
   const locked = variant !== 'suite' || !gameConfig?.variants;
-  const startUrl = String(pwa.startUrl || (locked || !selectedKey ? '/' : `/?game=${encodeURIComponent(selectedKey)}`));
+  const selectedMedia = media || (/^[a-f0-9]{32}$/i.test(String(url.searchParams.get('media') || '')) ?
+    String(url.searchParams.get('media')).toLowerCase() : '');
+  const startParams = new URLSearchParams();
+  if (!locked && selectedKey) startParams.set('game', selectedKey);
+  if (selectedMedia) startParams.set('media', selectedMedia);
+  const defaultStartUrl = startParams.size ? `/?${startParams}` : '/';
+  const startUrl = String(pwa.startUrl || defaultStartUrl);
   const fallbackIcon = selected.icon ? [{ src: String(selected.icon), sizes: 'any' }] : [];
   const icons = Array.isArray(pwa.icons) && pwa.icons.length ? pwa.icons : fallbackIcon;
   return {
@@ -293,7 +303,10 @@ const server = http.createServer(async (request, response) => {
       return json(response, 200, await store.media.detail(mediaEntry[1]));
     }
     if (url.pathname === '/wasm-game-config.js' && (request.method === 'GET' || request.method === 'HEAD')) {
-      const body = Buffer.from(`globalThis.WASM_GAME_VARIANT = ${JSON.stringify(variant)};\n`);
+      const body = Buffer.from(
+        `globalThis.WASM_GAME_VARIANT = ${JSON.stringify(variant)};\n` +
+        `globalThis.WASM_GAME_MEDIA = ${JSON.stringify(media)};\n`
+      );
       response.writeHead(200, commonHeaders({
         'Content-Type': 'text/javascript; charset=utf-8', 'Content-Length': body.length, 'Cache-Control': 'no-store'
       }));

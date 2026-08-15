@@ -38,6 +38,7 @@ async function waitFor(url) {
   const port = await availablePort();
   const pakA = Buffer.from('PACKvariant-a');
   const pakB = Buffer.from('PACKvariant-b');
+  const mediaId = 'd'.repeat(32);
   const optional = Buffer.from('OggSoptional');
   await Promise.all([fsp.mkdir(site), fsp.mkdir(data), fsp.mkdir(shell)]);
   await fsp.writeFile(path.join(site, 'index.html'), '<!doctype html><title>fixture</title>');
@@ -79,7 +80,8 @@ async function waitFor(url) {
       WASM_GAME_SHELL_ROOT: shell,
       WASM_GAME_DATA_ROOT: data,
       WASM_GAME_HTTP_PORT: String(port),
-      WASM_GAME_VARIANT: 'suite'
+      WASM_GAME_VARIANT: 'suite',
+      WASM_GAME_MEDIA: mediaId
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -92,12 +94,17 @@ async function waitFor(url) {
     assert.doesNotMatch(documentText, /fixture<\/title>/, 'framework document must replace a downstream index');
     const bmpResponse = await fetch(`${base}/background.bmp`);
     assert.equal(bmpResponse.headers.get('content-type'), 'image/bmp');
+    const runtimeConfig = await (await fetch(`${base}/wasm-game-config.js`)).text();
+    assert.match(runtimeConfig, /globalThis\.WASM_GAME_VARIANT = "suite"/);
+    assert.match(runtimeConfig, new RegExp(`globalThis\\.WASM_GAME_MEDIA = "${mediaId}"`),
+      'the static server must expose its hard-locked media entry to the launcher');
     const pwaResponse = await fetch(`${base}/app.webmanifest?variant=alpha`);
     assert.equal(pwaResponse.headers.get('content-type'), 'application/manifest+json');
     const pwa = await pwaResponse.json();
     assert.equal(pwa.name, 'Alpha Game');
     assert.equal(pwa.short_name, 'Alpha');
-    assert.equal(pwa.start_url, '/?game=alpha');
+    assert.equal(pwa.start_url, `/?game=alpha&media=${mediaId}`,
+      'an installed direct-media PWA must reopen the same suite variant and entry');
     assert.equal(pwa.display, 'standalone');
     assert.equal(pwa.theme_color, '#123456');
     assert.deepEqual(pwa.icons, [{ src: '/fixture.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }]);

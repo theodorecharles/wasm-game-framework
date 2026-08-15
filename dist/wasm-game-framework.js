@@ -1365,6 +1365,48 @@
       !(library.ready === true && library.launcherVisibleWhenReady === false));
   }
 
+  const MEDIA_ENTRY_ID_PATTERN = /^[a-f0-9]{32}$/i;
+
+  function normalizeMediaEntryId(value) {
+    const id = String(value == null ? '' : value).trim();
+    return MEDIA_ENTRY_ID_PATTERN.test(id) ? id.toLowerCase() : null;
+  }
+
+  function resolveMediaSelection(library, options) {
+    const config = options || {};
+    const entries = Array.isArray(library?.entries) ? library.entries : [];
+    const available = id => entries.some(entry => entry.id === id);
+    const explicit = (value, source, locked) => {
+      const id = normalizeMediaEntryId(value);
+      if (!id) return Object.freeze({
+        id: '', requestedId: '', source, explicit: true, locked, valid: false, available: false,
+        error: 'Media entry IDs must contain exactly 32 hexadecimal characters.'
+      });
+      const installed = available(id);
+      return Object.freeze({
+        id: installed ? id : '', requestedId: id, source, explicit: true, locked, valid: true,
+        available: installed,
+        ...(installed ? {} : { error: 'The requested media is not available in this deployment.' })
+      });
+    };
+    if (config.locked != null && String(config.locked).trim()) {
+      return explicit(config.locked, 'deployment', true);
+    }
+    if (config.requestedPresent === true) {
+      return explicit(config.requested, String(config.requestedSource || 'query'), false);
+    }
+    const stored = normalizeMediaEntryId(config.stored);
+    if (stored && available(stored)) return Object.freeze({
+      id: stored, requestedId: stored, source: 'saved', explicit: false, locked: false,
+      valid: true, available: true
+    });
+    const fallback = normalizeMediaEntryId(entries[0]?.id) || '';
+    return Object.freeze({
+      id: fallback, requestedId: fallback, source: fallback ? 'default' : 'none', explicit: false,
+      locked: false, valid: true, available: Boolean(fallback)
+    });
+  }
+
   function normalizeMediaBundleValidatorResult(value, fileNames) {
     const result = normalizeDataValidatorResult(value);
     const label = validationText(value && value.label, 'media label', 256);
@@ -1844,6 +1886,10 @@
     const config = options || {};
     const baseUrl = String(config.baseUrl || '/game-data').replace(/\/$/, '');
     const variant = String(config.variant || '').toLowerCase();
+    const configuredMedia = String(config.media == null ? '' : config.media).trim();
+    const hardLockedMedia = config.mediaLocked === true && Boolean(configuredMedia);
+    let requestedMedia = configuredMedia;
+    let requestedMediaPresent = config.mediaExplicit === true || Boolean(configuredMedia);
     const tokenField = () => element(config.token, '[data-shell-setup-token]');
 
     function endpoint(suffix) {
@@ -1913,17 +1959,30 @@
       return `wasm-game-media-selection:${library.namespace}:${variant || 'default'}`;
     }
 
+    function mediaSelection(library) {
+      let stored = '';
+      try { stored = String(localStorage.getItem(mediaSelectionKey(library)) || ''); } catch (_) {}
+      return resolveMediaSelection(library, {
+        locked: hardLockedMedia ? configuredMedia : '',
+        requested: requestedMedia,
+        requestedPresent: !hardLockedMedia && requestedMediaPresent,
+        requestedSource: config.mediaSource || 'query',
+        stored
+      });
+    }
+
     function selectedMedia(library) {
-      let selected = '';
-      try { selected = String(localStorage.getItem(mediaSelectionKey(library)) || ''); } catch (_) {}
-      if (!library.entries.some(entry => entry.id === selected)) selected = library.entries[0]?.id || '';
-      return selected;
+      return mediaSelection(library).id;
     }
 
     function selectMedia(entryId, library) {
       const state = library || null;
-      const id = String(entryId || '');
+      const id = normalizeMediaEntryId(entryId);
+      if (!id) throw new Error('Media entry IDs must contain exactly 32 hexadecimal characters.');
       if (state && !state.entries.some(entry => entry.id === id)) throw new Error('Unknown media entry.');
+      if (hardLockedMedia) return mediaSelection(state).id;
+      requestedMedia = id;
+      requestedMediaPresent = true;
       if (state) try { localStorage.setItem(mediaSelectionKey(state), id); } catch (_) {}
       return id;
     }
@@ -2033,10 +2092,27 @@
     async function loadMedia(entryId, loadOptions) {
       const request = loadOptions || {};
       const library = await mediaStatus();
-      const id = String(entryId || selectedMedia(library));
+      const selection = mediaSelection(library);
+      const hasDirectId = entryId != null && String(entryId).trim() !== '';
+      const directId = hasDirectId ? normalizeMediaEntryId(entryId) : '';
+      if (hasDirectId && !directId) {
+        const error = new Error('Media entry IDs must contain exactly 32 hexadecimal characters.');
+        error.code = 'MEDIA_SELECTION_INVALID';
+        throw error;
+      }
+      if (hardLockedMedia && directId && directId !== normalizeMediaEntryId(configuredMedia)) {
+        const error = new Error('This deployment is locked to a different media entry.');
+        error.code = 'MEDIA_SELECTION_LOCKED';
+        throw error;
+      }
+      const id = directId || selection.id;
       if (!id || !library.entries.some(entry => entry.id === id)) {
-        const error = new Error('Select a media entry before starting.');
-        error.code = 'MEDIA_SELECTION_REQUIRED';
+        const error = new Error(selection.explicit ?
+          (selection.error || 'The requested media is not available in this deployment.') :
+          'Select a media entry before starting.');
+        error.code = selection.explicit ?
+          (selection.valid ? 'MEDIA_SELECTION_UNAVAILABLE' : 'MEDIA_SELECTION_INVALID') :
+          'MEDIA_SELECTION_REQUIRED';
         throw error;
       }
       const detail = await mediaDetail(id);
@@ -2197,10 +2273,10 @@
       const request = gateOptions || {};
       let state = await status();
       if (state.mediaLibrary?.configured) {
-        const selectedId = selectedMedia(state.mediaLibrary);
+        const selection = mediaSelection(state.mediaLibrary);
         state = Object.freeze({
           ...state,
-          mediaLibrary: Object.freeze({ ...state.mediaLibrary, selectedId })
+          mediaLibrary: Object.freeze({ ...state.mediaLibrary, selectedId: selection.id, selection })
         });
       }
       const provisioning = Array.from(document.querySelectorAll(request.provisioning || '[data-shell-provisioning]'));
@@ -2218,6 +2294,7 @@
     const media = Object.freeze({
       status: mediaStatus,
       selected: selectedMedia,
+      selection: mediaSelection,
       select: selectMedia,
       upload: uploadMedia,
       detail: mediaDetail,
@@ -2747,7 +2824,7 @@
   }
 
   const api = Object.freeze({
-    version: '0.9.3',
+    version: '0.9.4',
     DISPLAY_MODES,
     ENGINE_STATES,
     CONTROLLER_MODES,
@@ -2780,6 +2857,8 @@
     runMediaBundleValidator,
     normalizeMediaRelativeName,
     mediaLibraryLauncherVisible,
+    normalizeMediaEntryId,
+    resolveMediaSelection,
     validateOwnerFile,
     ownerFileValidation,
     mountOwnerFiles,
