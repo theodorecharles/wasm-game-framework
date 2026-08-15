@@ -10,11 +10,6 @@ Current release: **0.9.6**
 
 Documentation: [theodorecharles.github.io/wasm-game-framework](https://theodorecharles.github.io/wasm-game-framework/)
 
-```bash
-npx create-wasm-game my-game
-npm create wasm-game@latest my-game
-```
-
 Version 0.9.6 restores large browser media libraries with bounded parallel
 HTTP and IndexedDB work instead of serializing thousands of files. Version
 0.9.5 added bounded, downstream-owned media transformation so a launch card can
@@ -31,8 +26,28 @@ fullscreen launch, and idle dedicated-server wakeup.
 
 ## Quick start
 
-The framework repository is self-contained. It does not include a game engine,
-compiled game WASM, or game data:
+Start a new game with the published scaffold:
+
+```bash
+npx create-wasm-game my-game
+cd my-game
+npm test
+npm start
+```
+
+`npm create wasm-game@latest my-game` is the same command. The scaffold writes
+`web/wasm-game.json`, `web/game-adapter.js`, data policy, an exact
+`@wasm-game-framework/browser@0.9.6` pin, Docker build files, and a package
+contract test. It does not write `index.html`, launcher CSS, a service worker,
+or a web manifest. Defaults are explicit `displayMode: "4:3"`,
+`menuCursor: "browser"`, `controller.mode: "disabled"`, persistence attached
+before native main, and neutral ready-state copy.
+
+Useful flags: `--display-mode`, `--menu-cursor`, `--controller`, `--media`,
+`--server`. See [Getting started](https://theodorecharles.github.io/wasm-game-framework/getting-started.html).
+
+The framework repository itself is self-contained and does not include a game
+engine, compiled game WASM, or game data. To work on the framework:
 
 ```bash
 git clone https://github.com/theodorecharles/wasm-game-framework.git
@@ -41,8 +56,8 @@ npm test
 ./scripts/build-base-image.sh wasm-game-framework:0.9.6
 ```
 
-To integrate a separate downstream game, point the installer and image builder
-at that game's compiled web directory:
+To integrate an existing compiled game site, point the installer and image
+builder at that game's web directory:
 
 ```bash
 game_site=/absolute/path/to/my-game-wasm/web
