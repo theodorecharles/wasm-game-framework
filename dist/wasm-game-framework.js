@@ -2658,7 +2658,7 @@
   }
 
   const api = Object.freeze({
-    version: '0.9.0',
+    version: '0.9.1',
     DISPLAY_MODES,
     ENGINE_STATES,
     CONTROLLER_MODES,
