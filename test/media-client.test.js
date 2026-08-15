@@ -15,9 +15,12 @@ const previous = {
   const downloads = [];
   const entries = [
     { id: 'a'.repeat(32), label: 'Alpha', fileCount: 1, totalSize: 9 },
-    { id: 'b'.repeat(32), label: 'Beta', fileCount: 1, totalSize: 8 }
+    { id: 'b'.repeat(32), label: 'Beta', fileCount: 1, totalSize: 8 },
+    { id: 'c'.repeat(32), label: 'Bulk', fileCount: 24, totalSize: 192 }
   ];
   const bytes = new Map([[entries[0].id, 'MEDIA-A1'], [entries[1].id, 'MEDIA-B']]);
+  let activeDownloads = 0;
+  let maximumActiveDownloads = 0;
   const declaration = {
     module: '/data-validator.mjs', export: 'validateMediaFixture', version: 'media-fixture-v1',
     policy: { primary: 'game.bin', signature: 'MEDIA' }, maxReadBytes: 16, maxTotalReadBytes: 16
@@ -39,22 +42,38 @@ const previous = {
       mediaLibrary: {
         configured: true, namespace: 'client-fixture', version: 'v1', ready: true,
         minimumEntries: 1, entries,
-        limits: { maxBrowserCacheBytes: 64 }
+        limits: { maxBrowserCacheBytes: 512 }
       }
     });
     const detailMatch = /^\/game-data\/media\/entries\/([a-f0-9]{32})$/.exec(url.pathname);
     if (detailMatch) {
       const id = detailMatch[1];
+      const files = id === entries[2].id
+        ? Array.from({ length: 24 }, (_, index) => ({
+          id: `file-${index.toString(36)}`,
+          name: index ? `asset-${index}.bin` : 'game.bin',
+          size: 8
+        }))
+        : [{ id: 'file-0', name: 'game.bin', size: bytes.get(id).length }];
       return Response.json({
         ...entries.find(entry => entry.id === id), primary: 'game.bin',
-        files: [{ id: 'file-0', name: 'game.bin', size: bytes.get(id).length }],
+        files,
         validator: declaration, cacheVersion: `v1:${id}`
       });
     }
-    const fileMatch = /^\/game-data\/media\/entries\/([a-f0-9]{32})\/files\/file-0$/.exec(url.pathname);
+    const fileMatch = /^\/game-data\/media\/entries\/([a-f0-9]{32})\/files\/(file-[a-z0-9]+)$/.exec(url.pathname);
     if (fileMatch) {
       downloads.push(fileMatch[1]);
-      return new Response(bytes.get(fileMatch[1]), { headers: { 'content-length': String(bytes.get(fileMatch[1]).length) } });
+      const body = fileMatch[1] === entries[2].id ?
+        (fileMatch[2] === 'file-0' ? 'MEDIA-C1' : `ASSET-${fileMatch[2].slice(5).padStart(2, '0')}`.slice(0, 8)) :
+        bytes.get(fileMatch[1]);
+      if (fileMatch[1] === entries[2].id) {
+        activeDownloads += 1;
+        maximumActiveDownloads = Math.max(maximumActiveDownloads, activeDownloads);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        activeDownloads -= 1;
+      }
+      return new Response(body, { headers: { 'content-length': String(body.length) } });
     }
     return Response.json({ error: 'not found' }, { status: 404 });
   };
@@ -87,7 +106,7 @@ const previous = {
     'a query-selected media entry must remain changeable');
 
   const missingClient = createContainerDataClient({
-    media: 'c'.repeat(32), mediaExplicit: true, mediaSource: 'query'
+    media: 'd'.repeat(32), mediaExplicit: true, mediaSource: 'query'
   });
   assert.equal(missingClient.media.selected(directLibrary), '',
     'an unavailable explicit media ID must never select the first installed entry');
@@ -101,6 +120,23 @@ const previous = {
     'a deployment lock must ignore downstream selection attempts');
   await assert.rejects(lockedClient.media.load(entries[1].id, { validationOptions }), error =>
     error.code === 'MEDIA_SELECTION_LOCKED');
+
+  const progress = [];
+  const bulk = await client.media.load(entries[2].id, {
+    validationOptions,
+    concurrency: 6,
+    onProgress(detail) {
+      if (detail.phase === 'cached-media') progress.push(detail.index);
+    }
+  });
+  assert.equal(bulk.entries.length, 24);
+  assert.deepEqual(bulk.entries.map(entry => entry.mountName),
+    ['game.bin', ...Array.from({ length: 23 }, (_, index) => `asset-${index + 1}.bin`)],
+    'parallel restoration must preserve manifest order');
+  assert(maximumActiveDownloads > 1 && maximumActiveDownloads <= 6,
+    `media concurrency must stay bounded, observed ${maximumActiveDownloads}`);
+  assert.deepEqual(progress, Array.from({ length: 24 }, (_, index) => index),
+    'parallel completion progress must remain monotonic');
 
   const tooLargeStatus = global.fetch;
   global.fetch = async input => {

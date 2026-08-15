@@ -6,11 +6,13 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.9.5**
+Current release: **0.9.6**
 
-Version 0.9.5 adds bounded, downstream-owned media transformation so a launch
-card can ingest installer/archive sets and atomically publish only their
-validated output. Version 0.9.4 added stable direct-media launch links and
+Version 0.9.6 restores large browser media libraries with bounded parallel
+HTTP and IndexedDB work instead of serializing thousands of files. Version
+0.9.5 added bounded, downstream-owned media transformation so a launch card can
+ingest installer/archive sets and atomically publish only their validated
+output. Version 0.9.4 added stable direct-media launch links and
 deployment locks. A suite may open `/?game=ps1&media=<32-hex-entry-id>`, while
 `WASM_GAME_MEDIA=<id>` locks an image to one installed entry. An unavailable
 explicit selection fails closed instead of silently launching the first entry.
@@ -29,7 +31,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.9.5
+./scripts/build-base-image.sh wasm-game-framework:0.9.6
 ```
 
 To integrate a separate downstream game, point the installer and image builder

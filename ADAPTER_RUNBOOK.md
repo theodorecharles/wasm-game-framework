@@ -398,6 +398,13 @@ for (const item of selected.entries) {
 startNativeMain(selected.primary);
 ```
 
+Media restoration uses 12 concurrent cache/network operations by default so a
+directory-style installation does not incur one serialized HTTP and IndexedDB
+round trip per file. Pass `concurrency: 1..32` only when a measured device or
+entry layout needs a different bounded value. Returned entries always retain
+manifest order, progress indices remain completion-monotonic, and any worker
+failure is drained before the selected-entry cache is cleared.
+
 Treat `MEDIA_SELECTION_REQUIRED` as a launcher state. Treat
 `MEDIA_RANDOM_ACCESS_REQUIRED` as a fail-closed adapter milestone: implement a
 reviewed range-backed native filesystem before enabling media above the browser

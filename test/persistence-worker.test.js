@@ -16,7 +16,7 @@ const { Worker } = require('node:worker_threads');
     worker.once('exit', code => { if (code !== 0) reject(new Error(`worker exited with ${code}`)); });
   });
   if (result.error) throw new Error(result.error);
-  assert.equal(result.version, '0.9.5');
+  assert.equal(result.version, '0.9.6');
   assert.equal(result.namespace, 'idtech4-doom3');
   assert.equal(result.root, '/save/doom3');
   assert.deepEqual(result.calls.slice(0, 4), [

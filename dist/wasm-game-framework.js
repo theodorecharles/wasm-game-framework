@@ -2131,28 +2131,45 @@
         await cache.clear();
         await cache.put('_selected', new Blob([]), { entryId: id });
       }
-      const entries = [];
+      const entries = new Array(detail.files.length);
       try {
-        for (let index = 0; index < detail.files.length; index += 1) {
-          const descriptor = detail.files[index];
-          const validate = file => {
-            if (!(file instanceof Blob) || file.size !== descriptor.size || String(file.name || '') !== descriptor.name) {
-              throw new Error(`Cached media file is invalid: ${descriptor.name}`);
+        let nextIndex = 0;
+        let completed = 0;
+        let firstError = null;
+        const configuredConcurrency = Number(request.concurrency);
+        const concurrency = Math.min(detail.files.length, Math.max(1, Math.min(32,
+          Number.isFinite(configuredConcurrency) && configuredConcurrency > 0 ? Math.floor(configuredConcurrency) : 12)));
+        const worker = async () => {
+          while (!firstError) {
+            const index = nextIndex++;
+            if (index >= detail.files.length) return;
+            const descriptor = detail.files[index];
+            try {
+              const validate = file => {
+                if (!(file instanceof Blob) || file.size !== descriptor.size || String(file.name || '') !== descriptor.name) {
+                  throw new Error(`Cached media file is invalid: ${descriptor.name}`);
+                }
+              };
+              const entry = await cache.getOrLoad({
+                key: descriptor.id,
+                load: () => downloadMediaFile(id, descriptor, request),
+                validate,
+                validateCached: validate,
+                metadata: { entryId: id, mediaFileId: descriptor.id, mountName: descriptor.name }
+              });
+              entries[index] = Object.freeze({ ...entry, mountName: descriptor.name, descriptor });
+              completed += 1;
+              request.onProgress?.({
+                phase: entry.cached ? 'restored-media' : 'cached-media', name: descriptor.name,
+                index: completed - 1, sourceIndex: index, total: detail.files.length, bytes: descriptor.size
+              });
+            } catch (error) {
+              firstError ||= error;
             }
-          };
-          const entry = await cache.getOrLoad({
-            key: descriptor.id,
-            load: () => downloadMediaFile(id, descriptor, request),
-            validate,
-            validateCached: validate,
-            metadata: { entryId: id, mediaFileId: descriptor.id, mountName: descriptor.name }
-          });
-          entries.push(Object.freeze({ ...entry, mountName: descriptor.name, descriptor }));
-          request.onProgress?.({
-            phase: entry.cached ? 'restored-media' : 'cached-media', name: descriptor.name,
-            index, total: detail.files.length, bytes: descriptor.size
-          });
-        }
+          }
+        };
+        await Promise.all(Array.from({ length: concurrency }, worker));
+        if (firstError) throw firstError;
         const validation = await runMediaBundleValidator(
           entries.map(entry => entry.file), detail.validator, request.validationOptions
         );
@@ -2824,7 +2841,7 @@
   }
 
   const api = Object.freeze({
-    version: '0.9.5',
+    version: '0.9.6',
     DISPLAY_MODES,
     ENGINE_STATES,
     CONTROLLER_MODES,
