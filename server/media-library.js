@@ -45,6 +45,30 @@ function cleanLabel(value, fallback) {
   return label;
 }
 
+function normalizeMediaTransformer(value) {
+  if (value === undefined || value === null || value === false) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('mediaLibrary.transformer must be false or an object.');
+  }
+  const module = String(value.module || '');
+  const exportName = String(value.export || 'transformMediaBundle');
+  const version = String(value.version || '1');
+  if (!module.startsWith('/') || !module.endsWith('.mjs') || module.includes('\\') || module.includes('\u0000')) {
+    throw new Error('Media transformer module must be an absolute site-root .mjs path.');
+  }
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(exportName)) throw new Error('Media transformer export is invalid.');
+  if (!version || version.length > 128 || /[\u0000-\u001f]/.test(version)) throw new Error('Media transformer version is invalid.');
+  let policy;
+  try {
+    const encoded = JSON.stringify(value.policy || {});
+    if (encoded.length > 65536) throw new Error('too large');
+    policy = JSON.parse(encoded);
+  } catch (_) {
+    throw new Error('Media transformer policy must be bounded JSON data.');
+  }
+  return Object.freeze({ module, export: exportName, version, policy: Object.freeze(policy) });
+}
+
 function normalizeMediaLibrary(value, defaults) {
   if (value === undefined || value === null || value === false) return null;
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('mediaLibrary must be false or an object.');
@@ -54,6 +78,7 @@ function normalizeMediaLibrary(value, defaults) {
   if (!version || version.length > 128 || /[\u0000-\u001f]/.test(version)) throw new Error('Media-library version is invalid.');
   const validator = normalizeDataValidatorDeclaration(value.validator);
   if (!validator) throw new Error('A media library requires a downstream bundle validator.');
+  const transformer = normalizeMediaTransformer(value.transformer);
   const publicMetadata = Array.from(new Set(value.publicMetadata || [])).map(key => {
     const field = String(key || '');
     if (!/^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/.test(field)) throw new Error(`Invalid public media metadata field: ${key}`);
@@ -77,7 +102,8 @@ function normalizeMediaLibrary(value, defaults) {
       'maxBrowserCacheBytes'
     ),
     publicMetadata: Object.freeze(publicMetadata),
-    validator
+    validator,
+    transformer
   });
 }
 
@@ -361,13 +387,87 @@ function createMediaLibraryStore(options) {
     });
   }
 
+  async function transformedInventory(root) {
+    const files = [];
+    let totalSize = 0;
+    async function walk(directory, relative) {
+      const items = (await fsp.readdir(directory, { withFileTypes: true }))
+        .sort((left, right) => left.name.localeCompare(right.name, 'en'));
+      for (const item of items) {
+        const target = path.join(directory, item.name);
+        const name = normalizeMediaRelativeName(relative ? `${relative}/${item.name}` : item.name);
+        if (item.isSymbolicLink()) throw new Error(`Transformed media contains a symbolic link: ${name}`);
+        if (item.isDirectory()) {
+          await walk(target, name);
+          continue;
+        }
+        if (!item.isFile()) throw new Error(`Transformed media contains an unsupported entry: ${name}`);
+        const stat = await fsp.stat(target);
+        if (stat.size > manifest.maxFileBytes) throw new Error(`Transformed media file exceeds its envelope: ${name}`);
+        totalSize += stat.size;
+        if (!Number.isSafeInteger(totalSize) || totalSize > manifest.maxEntryBytes) {
+          throw new Error('Transformed media exceeds its total-size envelope.');
+        }
+        files.push({ id: `file-${files.length.toString(36)}`, name, size: stat.size });
+        if (files.length > manifest.maxFilesPerEntry) throw new Error('Transformed media exceeds its file-count envelope.');
+      }
+    }
+    await walk(root, '');
+    if (!files.length) throw new Error('Media transformer produced no files.');
+    return Object.freeze({ files: Object.freeze(files.map(file => Object.freeze(file))), totalSize });
+  }
+
+  async function transformUpload(session) {
+    const rule = manifest.transformer;
+    if (!rule) return null;
+    let module;
+    try { module = await loadModule(rule.module); } catch (_) {
+      throw new Error(`Media transformer module ${rule.module} could not be loaded.`);
+    }
+    const transform = module && module[rule.export];
+    if (typeof transform !== 'function') {
+      throw new Error(`Media transformer module ${rule.module} does not export ${rule.export}().`);
+    }
+    const inputDirectory = path.join(session.directory, 'files');
+    const outputDirectory = path.join(session.directory, 'transformed');
+    await fsp.mkdir(outputDirectory, { recursive: true, mode: 0o700 });
+    const sourceFiles = Object.freeze(session.descriptors.map(file => Object.freeze({
+      name: file.name,
+      size: file.size,
+      path: path.join(inputDirectory, ...file.name.split('/'))
+    })));
+    const result = await transform(Object.freeze({
+      files: sourceFiles,
+      inputDirectory,
+      outputDirectory,
+      policy: rule.policy
+    }));
+    if (!result || result.transformed !== true) {
+      await fsp.rm(outputDirectory, { recursive: true, force: true });
+      return Object.freeze({ transformed: false });
+    }
+    const inventory = await transformedInventory(outputDirectory);
+    await fsp.rm(inputDirectory, { recursive: true, force: true });
+    await fsp.rename(outputDirectory, inputDirectory);
+    session.descriptors = inventory.files;
+    session.totalSize = inventory.totalSize;
+    session.completed = new Set(inventory.files.map(file => file.id));
+    return Object.freeze({
+      transformed: true,
+      label: result.label ? cleanLabel(result.label) : null,
+      version: rule.version
+    });
+  }
+
   async function commitUpload(uploadId) {
     const session = upload(uploadId);
     if (session.active.size) { const error = new Error('Media files are still uploading.'); error.statusCode = 409; throw error; }
     const missing = session.descriptors.filter(file => !session.completed.has(file.id));
     if (missing.length) { const error = new Error(`Media bundle is missing ${missing[0].name}.`); error.statusCode = 409; throw error; }
     let validation;
+    let transformation;
     try {
+      transformation = await transformUpload(session);
       validation = await runMediaBundleValidator(
         session.descriptors.map(file => validationSource(session, file)),
         manifest.validator,
@@ -382,7 +482,7 @@ function createMediaLibraryStore(options) {
       throw error;
     }
     const primary = validation.primary || session.descriptors[0].name;
-    const label = cleanLabel(validation.label || session.label, path.basename(primary, path.extname(primary)));
+    const label = cleanLabel(validation.label || transformation?.label || session.label, path.basename(primary, path.extname(primary)));
     const metadata = {
       schemaVersion: 1,
       id: session.id,
@@ -396,7 +496,8 @@ function createMediaLibraryStore(options) {
         identity: validation.identity,
         version: validation.version,
         fingerprint: validation.fingerprint,
-        validatorVersion: validation.validatorVersion
+        validatorVersion: validation.validatorVersion,
+        ...(transformation?.transformed ? { transformerVersion: transformation.version } : {})
       }
     };
     await fsp.writeFile(path.join(session.directory, ENTRY_FILE), `${JSON.stringify(metadata)}\n`, { mode: 0o600, flag: 'wx' });

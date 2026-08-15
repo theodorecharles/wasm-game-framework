@@ -6,10 +6,12 @@ game engines compiled to WebAssembly. It follows the proven WolfET browser
 shell so each engine supplies policy rather than maintaining a different web
 application.
 
-Current release: **0.9.4**
+Current release: **0.9.5**
 
-Version 0.9.4 adds stable direct-media launch links and deployment locks for
-console libraries. A suite may open `/?game=ps1&media=<32-hex-entry-id>`, while
+Version 0.9.5 adds bounded, downstream-owned media transformation so a launch
+card can ingest installer/archive sets and atomically publish only their
+validated output. Version 0.9.4 added stable direct-media launch links and
+deployment locks. A suite may open `/?game=ps1&media=<32-hex-entry-id>`, while
 `WASM_GAME_MEDIA=<id>` locks an image to one installed entry. An unavailable
 explicit selection fails closed instead of silently launching the first entry.
 
@@ -27,7 +29,7 @@ compiled game WASM, or game data:
 git clone https://github.com/theodorecharles/wasm-game-framework.git
 cd wasm-game-framework
 npm test
-./scripts/build-base-image.sh wasm-game-framework:0.9.4
+./scripts/build-base-image.sh wasm-game-framework:0.9.5
 ```
 
 To integrate a separate downstream game, point the installer and image builder
@@ -178,6 +180,12 @@ A media-library declaration is format-neutral:
     "maxEntryBytes": 4294967296,
     "maxBrowserCacheBytes": 2147483648,
     "publicMetadata": ["system", "region"],
+    "transformer": {
+      "module": "/media-transformer.mjs",
+      "export": "transformMediaBundle",
+      "version": "example-transform-v1",
+      "policy": { "format": "example-installer" }
+    },
     "validator": {
       "module": "/data-validator.mjs",
       "export": "validateMediaBundle",
@@ -189,6 +197,15 @@ A media-library declaration is format-neutral:
   }
 }
 ```
+
+`transformer` is optional and server-side. When present, the framework gives
+the trusted downstream module private input and output directories plus the
+declared file inventory and JSON policy. Returning `{ transformed: true }`
+causes the framework to inventory the output without following symbolic links,
+enforce the same file-count and byte ceilings, validate the transformed bundle,
+and install it atomically. Returning `{ transformed: false }` validates and
+installs the original upload. The framework contains no installer or archive
+format knowledge; the downstream image supplies any extraction tool it needs.
 
 `launcherVisibleWhenReady` defaults to `true`, which keeps a ROM or disc
 library selectable after startup. Set it to `false` for a single-install media

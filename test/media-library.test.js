@@ -36,6 +36,18 @@ function source(value) {
   assert.equal(normalized.launcherVisibleWhenReady, true,
     'ROM-style libraries keep the selector visible by default');
   assert.equal(normalizeMediaLibrary({ ...manifest, launcherVisibleWhenReady: false }).launcherVisibleWhenReady, false);
+  const transformedManifest = {
+    ...manifest,
+    namespace: 'fixture-transformed-media',
+    version: 'transformed-v1',
+    maxEntries: 1,
+    transformer: {
+      module: '/media-transformer.mjs', export: 'transformMediaFixture', version: 'fixture-transform-v1',
+      policy: { label: 'Imported Fixture Disc' }
+    }
+  };
+  const normalizedTransformed = normalizeMediaLibrary(transformedManifest);
+  assert.equal(normalizedTransformed.transformer.version, 'fixture-transform-v1');
   const store = createMediaLibraryStore({ dataRoot, validatorRoot: siteRoot, manifest });
 
   assert.equal((await store.status()).ready, false);
@@ -78,6 +90,37 @@ function source(value) {
   await assert.rejects(store.beginUpload({ files: [{ name: 'overflow.bin', size: 1 }] }), /entry limit/,
     'active uploads must reserve an entry slot');
   await store.abortUpload(held.id);
+
+  await fsp.copyFile(path.join(__dirname, 'fixtures/media-transformer.mjs'), path.join(siteRoot, 'media-transformer.mjs'));
+  const transformedStore = createMediaLibraryStore({ dataRoot, validatorRoot: siteRoot, manifest: transformedManifest });
+  const installer = await transformedStore.beginUpload({ files: [{ name: 'setup.exe', size: 9 }] });
+  await transformedStore.acceptUploadFile(installer.id, installer.files[0].id, source('installer'));
+  const imported = await transformedStore.commitUpload(installer.id);
+  assert.equal(imported.label, 'Fixture Disc', 'the validator label remains authoritative');
+  assert.equal(imported.fileCount, 2);
+  assert.equal(imported.totalSize, 21);
+  const importedDetail = await transformedStore.detail(imported.id);
+  assert.deepEqual(importedDetail.files.map(file => file.name), ['game.cue', 'track01.bin']);
+  assert.equal(importedDetail.cacheVersion, `transformed-v1:${imported.id}`);
+  const importedMetadata = JSON.parse(await fsp.readFile(
+    path.join(dataRoot, transformedManifest.path || 'media/fixture-transformed-media', 'entries', imported.id, '.media-entry.json'),
+    'utf8'
+  ));
+  assert.equal(importedMetadata.validation.transformerVersion, 'fixture-transform-v1');
+
+  const symlinkStore = createMediaLibraryStore({
+    dataRoot,
+    validatorRoot: siteRoot,
+    manifest: {
+      ...transformedManifest,
+      namespace: 'fixture-symlink-media',
+      transformer: { ...transformedManifest.transformer, export: 'transformMediaSymlink' }
+    }
+  });
+  const hostile = await symlinkStore.beginUpload({ files: [{ name: 'setup.exe', size: 9 }] });
+  await symlinkStore.acceptUploadFile(hostile.id, hostile.files[0].id, source('installer'));
+  await assert.rejects(symlinkStore.commitUpload(hostile.id), /symbolic link/);
+  assert.deepEqual(await symlinkStore.listEntries(), []);
 
   await fsp.rm(root, { recursive: true, force: true });
   console.log('atomic private media-library store tests passed');
